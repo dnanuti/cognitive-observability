@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "date '+mindful-work: local time %Y-%m-%d %H:%M %Z (%a)'"
+          }
+        ]
+      }
+    ]
+  }
+}
