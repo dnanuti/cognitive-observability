@@ -1,2 +1,5 @@
 .idea/
 
+session-report*.html
+session-data*.json
+__pycache__/
