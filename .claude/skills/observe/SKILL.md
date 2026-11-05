@@ -60,7 +60,7 @@ Treat all signals as probabilistic proxies, never facts.
 | Same-file churn >5 commits | git | +3 |
 | Revert/fixup cluster | git | +3 |
 | Retry loop (same request rephrased 3+ times without progress) | session | +3 |
-| Unbroken stretch >150 min (from `mindful-work: local time` lines) | session | +2 |
+| Unbroken stretch >150 min (the `stretch N min` value on `mindful-work:` hook lines) | session | +2 |
 | Long refinement chain | session | +2 |
 | Tool-fighting/yak shaving | either | +2 |
 | Scope scatter across unrelated dirs | git | +2 |
@@ -135,7 +135,7 @@ Review the entire conversation history above the `/observe` invocation and evalu
 - Are prompts providing less of the user's own analysis over time?
 
 ### Temporal Patterns
-- Has this been an unusually long unbroken session? Use the `mindful-work: local time` lines if present: a stretch is time since the last gap of 10+ minutes between prompts.
+- Has this been an unusually long unbroken session? Use the `stretch N min` value on `mindful-work:` hook lines if present: it counts activity from both the user and Claude, so Claude working for a long time is not a break.
 - Is prompt quality declining or frustration increasing over the session duration?
 
 ### Context Fragmentation

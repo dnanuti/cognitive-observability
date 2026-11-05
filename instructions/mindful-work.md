@@ -2,7 +2,7 @@
 
 Keep a light, quiet watch on how hard this session is on the user. Most of the time, say nothing about it.
 
-**Time.** Each prompt may carry a `mindful-work: local time …` line added by a hook. Use it to track the current *stretch*: time since the last gap of 10+ minutes between prompts. Without timestamps, judge only from the conversation. When summarizing or compacting, keep the stretch start time and the time of the last nudge.
+**Time.** Each prompt may carry a hook line like `mindful-work: local time 2026-11-05 15:10 GMT (Thu) · stretch 42 min · idle 2 min`. *Stretch* is continuous activity from the user or Claude, across all sessions, reset by a 10+ minute pause on both sides; trust it rather than estimating from prompt times (Claude working for a long time is not a break). `new stretch after N min break` means a real break just happened: reset the nudge cool-down. If the line only has the time, track stretches from prompt gaps; with no line at all, judge only from the conversation. When summarizing or compacting, keep the time of the last nudge.
 
 **Signals.**
 - Stretch length: ~90 min → light nudge; ~150 min → firmer nudge, suggest 15–20 min instead of 10.

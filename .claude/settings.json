@@ -5,7 +5,30 @@
         "hooks": [
           {
             "type": "command",
-            "command": "date '+mindful-work: local time %Y-%m-%d %H:%M %Z (%a)'"
+            "command": "sh \"$CLAUDE_PROJECT_DIR/hooks/mindful-time.sh\" prompt"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$CLAUDE_PROJECT_DIR/hooks/mindful-time.sh\" activity",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$CLAUDE_PROJECT_DIR/hooks/mindful-time.sh\" activity",
+            "async": true
           }
         ]
       }

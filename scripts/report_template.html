@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session Patterns</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface-1: #fcfcfb;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a;
+  --series-1-wash: rgba(42,120,214,0.10);
+  --seq-0: #f0efec; --seq-1: #cde2fb; --seq-2: #9ec5f4; --seq-3: #6da7ec;
+  --seq-4: #3987e5; --seq-5: #256abf; --seq-6: #184f95; --seq-7: #0d366b;
+  --serious: #ec835a; --critical: #d03b3b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface-1: #1a1a19;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+    --series-1-wash: rgba(57,135,229,0.14);
+    --seq-0: #262624; --seq-1: #104281; --seq-2: #184f95; --seq-3: #1c5cab;
+    --seq-4: #256abf; --seq-5: #3987e5; --seq-6: #6da7ec; --seq-7: #9ec5f4;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface-1: #1a1a19;
+  --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+  --series-1-wash: rgba(57,135,229,0.14);
+  --seq-0: #262624; --seq-1: #104281; --seq-2: #184f95; --seq-3: #1c5cab;
+  --seq-4: #256abf; --seq-5: #3987e5; --seq-6: #6da7ec; --seq-7: #9ec5f4;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--page); color: var(--text-primary);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 1120px; margin: 0 auto; padding: 32px 16px 64px; }
+header h1 { font-size: 24px; margin: 0 0 4px; font-weight: 600; }
+header p { margin: 0; color: var(--text-secondary); }
+.note { color: var(--text-secondary); font-size: 13px; max-width: 72ch; }
+h2 { font-size: 17px; font-weight: 600; margin: 40px 0 4px; }
+h2 + .note { margin-top: 0; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 24px 0 0; }
+.tile, .card {
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+}
+.tile { padding: 14px 16px; }
+.tile .label { color: var(--text-secondary); font-size: 12px; }
+.tile .value { font-size: 26px; font-weight: 600; margin-top: 2px; }
+.tile .sub { color: var(--text-muted); font-size: 12px; }
+.card { padding: 16px; margin-top: 12px; min-width: 0; }
+.card h3 { font-size: 14px; font-weight: 600; margin: 0; }
+.card .sub { color: var(--text-secondary); font-size: 12px; margin: 2px 0 10px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 12px; }
+.chart { width: 100%; max-width: 100%; overflow-x: auto; }
+.grid2 > *, .tiles > * { min-width: 0; }
+.chart svg { display: block; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.legend i.line { height: 2px; border-radius: 1px; vertical-align: 3px; width: 14px; }
+svg text { fill: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+svg .lbl { fill: var(--text-secondary); }
+svg .grid { stroke: var(--grid); stroke-width: 1; }
+svg .axis { stroke: var(--axis); stroke-width: 1; }
+.hit { fill: transparent; cursor: default; }
+.hit:hover + .hl, .hit:focus + .hl { opacity: 1; }
+.hl { opacity: 0; pointer-events: none; }
+#tip {
+  position: fixed; pointer-events: none; z-index: 10; display: none;
+  background: var(--surface-1); color: var(--text-primary); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.12);
+  max-width: 260px;
+}
+#tip b { font-weight: 600; }
+#tip .muted { color: var(--text-secondary); }
+details { margin-top: 10px; }
+summary { cursor: pointer; color: var(--text-secondary); font-size: 12px; }
+table { border-collapse: collapse; width: 100%; font-size: 12px; margin-top: 8px; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 4px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--text-secondary); font-weight: 500; }
+.tablewrap { overflow-x: auto; max-height: 360px; }
+.findings { margin: 16px 0 0; padding-left: 18px; }
+.findings li { margin: 4px 0; }
+.badge { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border); color: var(--text-secondary); margin-left: 4px; }
+footer { margin-top: 48px; color: var(--text-muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Session patterns</h1>
+  <p id="subtitle"></p>
+</header>
+<p class="note">Generated locally from Claude Code session logs. Prompt text is never shown or stored here, only counts. Every number is a rough proxy: it can't see breaks away from the keyboard or work outside Claude.</p>
+
+<div class="tiles" id="tiles"></div>
+<ul class="findings" id="findings"></ul>
+
+<h2>1. Workload: how much and when</h2>
+<p class="note">Active time counts gaps under the break threshold between any activity (yours or Claude's). Days with no activity show as empty slots.</p>
+<div class="card"><h3>Active hours per day</h3><p class="sub">Bars: active hours · line: 7-day average · empty slot: no activity</p><div class="chart" id="c-daily"></div><details><summary>Show table</summary><div class="tablewrap" id="t-daily"></div></details></div>
+<div class="card"><h3>When you prompt: weekday × hour</h3><p class="sub">Stronger blue = more prompts. Outlined cells fall outside working hours.</p><div class="chart" id="c-heat"></div></div>
+
+<h2>2. Breaks and stretches</h2>
+<p class="note">A stretch is continuous work with no gap of 10+ minutes. These charts test whether the 90 and 150 minute nudge thresholds fit how you actually work.</p>
+<div class="card"><h3>Day timeline</h3><p class="sub">Each bar is a session's stretch, one row per day; markers are where the watcher would have nudged</p><div class="legend" id="l-timeline"></div><div class="chart" id="c-timeline"></div></div>
+<div class="grid2">
+  <div class="card"><h3>Stretch lengths</h3><p class="sub">Count of stretches by length in minutes (excludes stretches under 5 min) · orange = at or past the light-nudge threshold</p><div class="chart" id="c-stretch"></div></div>
+  <div class="card"><h3>Parallel sessions at each prompt</h3><p class="sub">Distinct sessions active within 15 minutes · orange = 3 or more</p><div class="chart" id="c-parallel"></div></div>
+</div>
+
+<h2>3. Friction</h2>
+<p class="note">Interruptions (you stopping Claude), failed tool calls and short quick follow-ups are proxies for "that's not what I meant" loops.</p>
+<div class="card"><h3>Friction per day</h3><p class="sub">Per 10 prompts, so busy days don't look worse just for being busy</p><div class="legend" id="l-friction"></div><div class="chart" id="c-friction"></div></div>
+<div class="grid2">
+  <div class="card"><h3>Friction by hour of day</h3><p class="sub">Interruptions + short follow-ups per 10 prompts · hours with 5+ prompts · orange = outside working hours</p><div class="chart" id="c-fhour"></div></div>
+  <div class="card"><h3>Prompt length as a stretch goes on</h3><p class="sub">Median characters per prompt by minutes into the stretch</p><div class="chart" id="c-plen"></div></div>
+</div>
+
+<h2>4. AI review load</h2>
+<p class="note">Lines Claude wrote or edited for you to check, and subagent work running alongside.</p>
+<div class="card"><h3>Lines written or edited by Claude per day</h3><p class="sub">From Edit and Write tool calls</p><div class="chart" id="c-lines"></div></div>
+
+<h2>5. Replaying the watcher</h2>
+<p class="note">The rules from <code>instructions/mindful-work.md</code>, run over your history as if the watcher had been on. Aim for roughly 0–2 nudges on a normal day.</p>
+<div class="grid2">
+  <div class="card"><h3>Replayed nudges per day</h3><p class="sub">Light, firm and step-back nudges</p><div class="legend" id="l-nudges"></div><div class="chart" id="c-nudges"></div></div>
+  <div class="card"><h3>Threshold sensitivity</h3><p class="sub">Total nudges over the period for different light-nudge thresholds; the lower line shows how many the old prompts-only timing would have missed</p><div class="legend" id="l-sens"></div><div class="chart" id="c-sens"></div></div>
+</div>
+<div class="card"><h3>Every replayed nudge</h3><p class="sub">Check a few: did these moments actually feel heavy?</p><div class="tablewrap" id="t-nudges"></div></div>
+
+<h2>6. How you felt</h2>
+<div class="card" id="checkins"></div>
+
+<footer id="footer"></footer>
+</main>
+<div id="tip" role="tooltip"></div>
+<script>
+const DATA = /*__DATA__*/null;
+</script>
+<script src="report.js"></script>
+</body>
+</html>
