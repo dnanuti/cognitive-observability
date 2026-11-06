@@ -59,6 +59,24 @@ The day timeline, friction-by-hour, prompt-length and threshold-sensitivity char
 
 The thresholds at the top of the script mirror `instructions/mindful-work.md`; change both together.
 
+## Demo report (synthetic data)
+
+[`examples/report-synthetic.html`](examples/report-synthetic.html) is a full report built from **invented** data, for presentations. You don't need a session history to see it. It covers 30 days across four generic projects (Project A–D), with no real prompts, names or paths:
+
+- **Low-effort week** (Mon 12 Oct): short mornings, Friday off, no nudges, battery ratings around 2.
+- **High-effort week** (Mon 26 Oct): 8–10 h days into the late evening, a Saturday catch-up, two or three parallel sessions, retry loops and frustrated wording, heavy AI edit volume, Claude running alone for long stretches. Nudges cluster here, battery ratings climb to 6 and the weekly burnout item reaches 3.
+- Normal weeks before and after, so the contrast is visible.
+
+To rebuild it (`--end` sets the last day; the seed keeps it reproducible):
+
+```bash
+python3 -I scripts/make_synthetic.py --end 2026-11-06
+python3 -I scripts/analyze_sessions.py --projects-dir examples/synthetic/projects \
+  --history examples/synthetic/no-history.jsonl --out examples/report-synthetic.html
+```
+
+The raw synthetic transcripts are in `examples/synthetic/projects/`, in the same JSONL shape Claude Code writes. The analyzer reads them like real logs.
+
 ## Commands
 
 | Command | What happens |

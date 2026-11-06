@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session Patterns</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface-1: #fcfcfb;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a;
+  --series-1-wash: rgba(42,120,214,0.10);
+  --seq-0: #f0efec; --seq-1: #cde2fb; --seq-2: #9ec5f4; --seq-3: #6da7ec;
+  --seq-4: #3987e5; --seq-5: #256abf; --seq-6: #184f95; --seq-7: #0d366b;
+  --serious: #ec835a; --critical: #d03b3b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface-1: #1a1a19;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+    --series-1-wash: rgba(57,135,229,0.14);
+    --seq-0: #262624; --seq-1: #104281; --seq-2: #184f95; --seq-3: #1c5cab;
+    --seq-4: #256abf; --seq-5: #3987e5; --seq-6: #6da7ec; --seq-7: #9ec5f4;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface-1: #1a1a19;
+  --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+  --series-1-wash: rgba(57,135,229,0.14);
+  --seq-0: #262624; --seq-1: #104281; --seq-2: #184f95; --seq-3: #1c5cab;
+  --seq-4: #256abf; --seq-5: #3987e5; --seq-6: #6da7ec; --seq-7: #9ec5f4;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--page); color: var(--text-primary);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 1120px; margin: 0 auto; padding: 32px 16px 64px; }
+header h1 { font-size: 24px; margin: 0 0 4px; font-weight: 600; }
+header p { margin: 0; color: var(--text-secondary); }
+.note { color: var(--text-secondary); font-size: 13px; max-width: 72ch; }
+h2 { font-size: 17px; font-weight: 600; margin: 40px 0 4px; }
+h2 + .note { margin-top: 0; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 24px 0 0; }
+.tile, .card {
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+}
+.tile { padding: 14px 16px; }
+.tile .label { color: var(--text-secondary); font-size: 12px; }
+.tile .value { font-size: 26px; font-weight: 600; margin-top: 2px; }
+.tile .sub { color: var(--text-muted); font-size: 12px; }
+.card { padding: 16px; margin-top: 12px; min-width: 0; }
+.card h3 { font-size: 14px; font-weight: 600; margin: 0; }
+.card .sub { color: var(--text-secondary); font-size: 12px; margin: 2px 0 10px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 12px; }
+.chart { width: 100%; max-width: 100%; overflow-x: auto; }
+.grid2 > *, .tiles > * { min-width: 0; }
+.chart svg { display: block; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.legend i.line { height: 2px; border-radius: 1px; vertical-align: 3px; width: 14px; }
+svg text { fill: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+svg .lbl { fill: var(--text-secondary); }
+svg .grid { stroke: var(--grid); stroke-width: 1; }
+svg .axis { stroke: var(--axis); stroke-width: 1; }
+.hit { fill: transparent; cursor: default; }
+.hit:hover + .hl, .hit:focus + .hl { opacity: 1; }
+.hl { opacity: 0; pointer-events: none; }
+#tip {
+  position: fixed; pointer-events: none; z-index: 10; display: none;
+  background: var(--surface-1); color: var(--text-primary); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.12);
+  max-width: 260px;
+}
+#tip b { font-weight: 600; }
+#tip .muted { color: var(--text-secondary); }
+details { margin-top: 10px; }
+summary { cursor: pointer; color: var(--text-secondary); font-size: 12px; }
+table { border-collapse: collapse; width: 100%; font-size: 12px; margin-top: 8px; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 4px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--text-secondary); font-weight: 500; }
+.tablewrap { overflow-x: auto; max-height: 360px; }
+.findings { margin: 16px 0 0; padding-left: 18px; }
+.findings li { margin: 4px 0; }
+.badge { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border); color: var(--text-secondary); margin-left: 4px; }
+footer { margin-top: 48px; color: var(--text-muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Session patterns</h1>
+  <p id="subtitle"></p>
+</header>
+<p class="note">Generated locally from Claude Code session logs. Prompt text is never shown or stored here, only counts. Every number is a rough proxy: it can't see breaks away from the keyboard or work outside Claude.</p>
+
+<div class="tiles" id="tiles"></div>
+<ul class="findings" id="findings"></ul>
+
+<h2>1. Workload: how much and when</h2>
+<p class="note">Active time counts gaps under the break threshold between any activity (yours or Claude's). Days with no activity show as empty slots.</p>
+<div class="card"><h3>Active hours per day</h3><p class="sub">Bars: active hours · line: 7-day average · empty slot: no activity · dashed: no data</p><div class="chart" id="c-daily"></div><details><summary>Show table</summary><div class="tablewrap" id="t-daily"></div></details></div>
+<div class="card"><h3>When you prompt: weekday × hour</h3><p class="sub">Stronger blue = more prompts. Outlined cells fall outside working hours.</p><div class="chart" id="c-heat"></div></div>
+
+<h2>2. Breaks and stretches</h2>
+<p class="note">A stretch is continuous work with no gap of 10+ minutes. These charts test whether the 90 and 150 minute nudge thresholds fit how you actually work.</p>
+<div class="card"><h3>Day timeline</h3><p class="sub">Each bar is a session's stretch, one row per day; markers are where the watcher would have nudged</p><div class="legend" id="l-timeline"></div><div class="chart" id="c-timeline"></div></div>
+<div class="grid2">
+  <div class="card"><h3>Stretch lengths</h3><p class="sub">Count of stretches by length in minutes (excludes stretches under 5 min) · orange = at or past the light-nudge threshold</p><div class="chart" id="c-stretch"></div></div>
+  <div class="card"><h3>Parallel sessions at each prompt</h3><p class="sub">Distinct sessions active within 15 minutes · orange = 3 or more</p><div class="chart" id="c-parallel"></div></div>
+</div>
+
+<h2>3. Friction</h2>
+<p class="note">Interruptions (you stopping Claude), failed tool calls and short quick follow-ups are proxies for "that's not what I meant" loops.</p>
+<div class="card"><h3>Friction per day</h3><p class="sub">Per 10 prompts, so busy days don't look worse just for being busy</p><div class="legend" id="l-friction"></div><div class="chart" id="c-friction"></div></div>
+<div class="grid2">
+  <div class="card"><h3>Friction by hour of day</h3><p class="sub">Interruptions + short follow-ups per 10 prompts · hours with 5+ prompts · orange = outside working hours</p><div class="chart" id="c-fhour"></div></div>
+  <div class="card"><h3>Prompt length as a stretch goes on</h3><p class="sub">Median characters per prompt by minutes into the stretch</p><div class="chart" id="c-plen"></div></div>
+</div>
+
+<h2>4. AI review load</h2>
+<p class="note">Lines Claude wrote or edited for you to check, and subagent work running alongside.</p>
+<div class="card"><h3>Lines written or edited by Claude per day</h3><p class="sub">From Edit and Write tool calls</p><div class="chart" id="c-lines"></div></div>
+
+<h2>5. Replaying the watcher</h2>
+<p class="note">The rules from <code>instructions/mindful-work.md</code>, run over your history as if the watcher had been on. Aim for roughly 0–2 nudges on a normal day.</p>
+<div class="grid2">
+  <div class="card"><h3>Replayed nudges per day</h3><p class="sub">Light, firm and step-back nudges</p><div class="legend" id="l-nudges"></div><div class="chart" id="c-nudges"></div></div>
+  <div class="card"><h3>Threshold sensitivity</h3><p class="sub">Total nudges over the period for different light-nudge thresholds; the lower line shows how many the old prompts-only timing would have missed</p><div class="legend" id="l-sens"></div><div class="chart" id="c-sens"></div></div>
+</div>
+<div class="card"><h3>Every replayed nudge</h3><p class="sub">Check a few: did these moments actually feel heavy?</p><div class="tablewrap" id="t-nudges"></div></div>
+
+<h2>6. How you felt</h2>
+<div class="card" id="checkins"></div>
+
+<footer id="footer"></footer>
+</main>
+<div id="tip" role="tooltip"></div>
+<script>
+const DATA = {"generated": "2026-11-06T13:31+00:00", "since": "2026-10-08", "days": 30, "coverage": {"raw_from": "2026-10-08", "raw_days": 30, "history_days": 0, "no_data_days": 0}, "thresholds": {"break_gap": 10, "light": 90, "firm": 150, "cooldown": 45, "work_start": 9, "work_end": 18}, "totals": {"prompts": 1537, "sessions": 47, "active_days": 23, "zero_days": 7, "active_h": 107.6, "late_share": 0.199, "interrupts": 94, "tool_errors": 463, "lines_edited": 55823, "subagent_turns": 0, "compactions": 6, "nudges": 66, "stretches_over_light": 31, "stretches_over_firm": 11, "longest_stretch": 226, "median_stretch": 85, "prompt_only_longest": 182, "prompt_only_median": 72}, "daily": [{"date": "2026-10-08", "weekday": "Thu", "active_h": 4.74, "span_start": "09:19", "span_end": "17:04", "prompts": 60, "late_prompts": 0, "interrupts": 2, "tool_errors": 12, "short_followups": 20, "frustration": 3, "lines_edited": 651, "subagents": 9, "sessions": 2, "max_parallel": 1, "nudges": 1, "nudges_firm": 0, "nudges_kind": {"light": 0, "firm": 0, "step back": 1}, "stretch_min": [88, 70, 90, 29], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 11, 3, 12, 0, 10, 8, 7, 1, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-10-09", "weekday": "Fri", "active_h": 4.96, "span_start": "09:20", "span_end": "17:03", "prompts": 69, "late_prompts": 0, "interrupts": 5, "tool_errors": 16, "short_followups": 27, "frustration": 8, "lines_edited": 767, "subagents": 3, "sessions": 2, "max_parallel": 1, "nudges": 3, "nudges_firm": 0, "nudges_kind": {"light": 2, "firm": 0, "step back": 1}, "stretch_min": [95, 54, 109, 32], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 12, 5, 6, 0, 12, 18, 8, 1, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-10-10", "weekday": "Sat", "active_h": 0, "span_start": null, "span_end": null, "prompts": 0, "late_prompts": 0, "interrupts": 0, "tool_errors": 0, "short_followups": 0, "frustration": 0, "lines_edited": 0, "subagents": 0, "sessions": 0, "max_parallel": 0, "nudges": 0, "nudges_firm": 0, "nudges_kind": {"light": 0, "firm": 0, "step back": 0}, "stretch_min": [], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-10-11", "weekday": "Sun", "active_h": 0.75, "span_start": "11:14", "span_end": "11:56", "prompts": 8, "late_prompts": 8, "interrupts": 0, "tool_errors": 1, "short_followups": 1, "frustration": 0, "lines_edited": 49, "subagents": 0, "sessions": 1, "max_parallel": 1, "nudges": 0, "nudges_firm": 0, "nudges_kind": {"light": 0, "firm": 0, "step back": 0}, "stretch_min": [43], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-10-12", "weekday": "Mon", "active_h": 0.95, "span_start": "09:41", "span_end": "10:36", "prompts": 11, "late_prompts": 0, "interrupts": 0, "tool_errors": 1, "short_followups": 2, "frustration": 0, "lines_edited": 114, "subagents": 0, "sessions": 1, "max_parallel": 1, "nudges": 0, "nudges_firm": 0, "nudges_kind": {"light": 0, "firm": 0, "step back": 0}, "stretch_min": [55], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-10-13", "weekday": "Tue", "active_h": 1.23, "span_start": "09:49", "span_end": "15:08", "prompts": 11, "late_prompts": 0, "interrupts": 0, "tool_errors": 2, "short_followups": 2, "frustration": 0, "lines_edited": 55, "subagents": 0, "sessions": 2, "max_parallel": 1, "nudges": 0, "nudges_firm": 0, "nudges_kind": {"light": 0, "firm": 0, "step back": 0}, "stretch_min": [32, 38], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 4, 0, 0, 0, 4, 1, 0, 0, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-10-14", "weekday": "Wed", "active_h": 1.45, "span_start": "09:52", "span_end": "14:47", "prompts": 14, "late_prompts": 0, "interrupts": 0, "tool_errors": 2, "short_followups": 3, "frustration": 0, "lines_edited": 170, "subagents": 0, "sessions": 2, "max_parallel": 1, "nudges": 0, "nudges_firm": 0, "nudges_kind": {"light": 0, "firm": 0, "step back": 0}, "stretch_min": [37, 46], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 4, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-10-15", "weekday": "Thu", "active_h": 1.92, "span_start": "09:50", "span_end": "14:56", "prompts": 18, "late_prompts": 0, "interrupts": 0, "tool_errors": 2, "short_followups": 5, "frustration": 0, "lines_edited": 153, "subagents": 0, "sessions": 2, "max_parallel": 1, "nudges": 0, "nudges_firm": 0, "nudges_kind": {"light": 0, "firm": 0, "step back": 0}, "stretch_min": [55, 56], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 6, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-10-16", "weekday": "Fri", "active_h": 0, "span_start": null, "span_end": null, "prompts": 0, "late_prompts": 0, "interrupts": 0, "tool_errors": 0, "short_followups": 0, "frustration": 0, "lines_edited": 0, "subagents": 0, "sessions": 0, "max_parallel": 0, "nudges": 0, "nudges_firm": 0, "nudges_kind": {"light": 0, "firm": 0, "step back": 0}, "stretch_min": [], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-10-17", "weekday": "Sat", "active_h": 0, "span_start": null, "span_end": null, "prompts": 0, "late_prompts": 0, "interrupts": 0, "tool_errors": 0, "short_followups": 0, "frustration": 0, "lines_edited": 0, "subagents": 0, "sessions": 0, "max_parallel": 0, "nudges": 0, "nudges_firm": 0, "nudges_kind": {"light": 0, "firm": 0, "step back": 0}, "stretch_min": [], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-10-18", "weekday": "Sun", "active_h": 0, "span_start": null, "span_end": null, "prompts": 0, "late_prompts": 0, "interrupts": 0, "tool_errors": 0, "short_followups": 0, "frustration": 0, "lines_edited": 0, "subagents": 0, "sessions": 0, "max_parallel": 0, "nudges": 0, "nudges_firm": 0, "nudges_kind": {"light": 0, "firm": 0, "step back": 0}, "stretch_min": [], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-10-19", "weekday": "Mon", "active_h": 3.94, "span_start": "09:17", "span_end": "15:44", "prompts": 48, "late_prompts": 0, "interrupts": 0, "tool_errors": 12, "short_followups": 13, "frustration": 0, "lines_edited": 717, "subagents": 12, "sessions": 2, "max_parallel": 1, "nudges": 0, "nudges_firm": 0, "nudges_kind": {"light": 0, "firm": 0, "step back": 0}, "stretch_min": [76, 63, 92], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 9, 7, 4, 8, 0, 10, 10, 0, 0, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-10-20", "weekday": "Tue", "active_h": 4.11, "span_start": "09:39", "span_end": "15:58", "prompts": 52, "late_prompts": 0, "interrupts": 0, "tool_errors": 6, "short_followups": 17, "frustration": 0, "lines_edited": 793, "subagents": 8, "sessions": 1, "max_parallel": 1, "nudges": 1, "nudges_firm": 0, "nudges_kind": {"light": 0, "firm": 0, "step back": 1}, "stretch_min": [86, 61, 94], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 14, 4, 10, 0, 7, 11, 0, 0, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-10-21", "weekday": "Wed", "active_h": 4.67, "span_start": "09:21", "span_end": "17:22", "prompts": 58, "late_prompts": 0, "interrupts": 0, "tool_errors": 16, "short_followups": 26, "frustration": 0, "lines_edited": 779, "subagents": 6, "sessions": 3, "max_parallel": 1, "nudges": 1, "nudges_firm": 0, "nudges_kind": {"light": 1, "firm": 0, "step back": 0}, "stretch_min": [84, 55, 95, 38], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 10, 5, 5, 0, 11, 9, 4, 6, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-10-22", "weekday": "Thu", "active_h": 4.21, "span_start": "09:18", "span_end": "15:42", "prompts": 53, "late_prompts": 0, "interrupts": 0, "tool_errors": 12, "short_followups": 26, "frustration": 0, "lines_edited": 684, "subagents": 6, "sessions": 2, "max_parallel": 1, "nudges": 2, "nudges_firm": 0, "nudges_kind": {"light": 2, "firm": 0, "step back": 0}, "stretch_min": [95, 50, 102], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 9, 11, 2, 10, 0, 14, 7, 0, 0, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-10-23", "weekday": "Fri", "active_h": 4.21, "span_start": "09:34", "span_end": "15:59", "prompts": 51, "late_prompts": 0, "interrupts": 3, "tool_errors": 6, "short_followups": 17, "frustration": 2, "lines_edited": 766, "subagents": 3, "sessions": 2, "max_parallel": 1, "nudges": 2, "nudges_firm": 0, "nudges_kind": {"light": 0, "firm": 0, "step back": 2}, "stretch_min": [94, 56, 97], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 11, 5, 7, 0, 8, 13, 0, 0, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-10-24", "weekday": "Sat", "active_h": 0, "span_start": null, "span_end": null, "prompts": 0, "late_prompts": 0, "interrupts": 0, "tool_errors": 0, "short_followups": 0, "frustration": 0, "lines_edited": 0, "subagents": 0, "sessions": 0, "max_parallel": 0, "nudges": 0, "nudges_firm": 0, "nudges_kind": {"light": 0, "firm": 0, "step back": 0}, "stretch_min": [], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-10-25", "weekday": "Sun", "active_h": 0, "span_start": null, "span_end": null, "prompts": 0, "late_prompts": 0, "interrupts": 0, "tool_errors": 0, "short_followups": 0, "frustration": 0, "lines_edited": 0, "subagents": 0, "sessions": 0, "max_parallel": 0, "nudges": 0, "nudges_firm": 0, "nudges_kind": {"light": 0, "firm": 0, "step back": 0}, "stretch_min": [], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-10-26", "weekday": "Mon", "active_h": 7.8, "span_start": "08:17", "span_end": "20:52", "prompts": 149, "late_prompts": 44, "interrupts": 26, "tool_errors": 55, "short_followups": 80, "frustration": 46, "lines_edited": 7226, "subagents": 4, "sessions": 2, "max_parallel": 2, "nudges": 9, "nudges_firm": 1, "nudges_kind": {"light": 3, "firm": 1, "step back": 5}, "stretch_min": [182, 63, 92, 124], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 11, 24, 27, 8, 5, 16, 18, 7, 0, 0, 3, 13, 17, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-10-27", "weekday": "Tue", "active_h": 7.85, "span_start": "08:16", "span_end": "20:56", "prompts": 143, "late_prompts": 41, "interrupts": 14, "tool_errors": 56, "short_followups": 68, "frustration": 29, "lines_edited": 8535, "subagents": 8, "sessions": 3, "max_parallel": 2, "nudges": 9, "nudges_firm": 0, "nudges_kind": {"light": 5, "firm": 0, "step back": 4}, "stretch_min": [171, 176, 118], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 9, 20, 27, 1, 2, 14, 29, 9, 0, 0, 1, 16, 15, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-10-28", "weekday": "Wed", "active_h": 10.55, "span_start": "08:29", "span_end": "22:57", "prompts": 149, "late_prompts": 54, "interrupts": 12, "tool_errors": 42, "short_followups": 75, "frustration": 38, "lines_edited": 8309, "subagents": 10, "sessions": 2, "max_parallel": 2, "nudges": 11, "nudges_firm": 3, "nudges_kind": {"light": 4, "firm": 3, "step back": 4}, "stretch_min": [184, 226, 154, 61], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 8, 17, 27, 6, 2, 13, 10, 16, 4, 0, 3, 10, 14, 9, 10, 0], "source": "raw", "no_data": false}, {"date": "2026-10-29", "weekday": "Thu", "active_h": 9.93, "span_start": "08:22", "span_end": "23:17", "prompts": 190, "late_prompts": 71, "interrupts": 19, "tool_errors": 74, "short_followups": 102, "frustration": 48, "lines_edited": 10395, "subagents": 11, "sessions": 3, "max_parallel": 3, "nudges": 10, "nudges_firm": 1, "nudges_kind": {"light": 5, "firm": 1, "step back": 4}, "stretch_min": [184, 173, 152, 79], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 13, 22, 24, 2, 6, 14, 34, 17, 0, 0, 1, 11, 19, 14, 13, 0], "source": "raw", "no_data": false}, {"date": "2026-10-30", "weekday": "Fri", "active_h": 8.25, "span_start": "08:28", "span_end": "20:57", "prompts": 131, "late_prompts": 42, "interrupts": 5, "tool_errors": 55, "short_followups": 57, "frustration": 14, "lines_edited": 9630, "subagents": 7, "sessions": 2, "max_parallel": 2, "nudges": 8, "nudges_firm": 1, "nudges_kind": {"light": 5, "firm": 1, "step back": 2}, "stretch_min": [183, 181, 125], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 10, 16, 28, 6, 4, 11, 13, 11, 0, 0, 2, 18, 12, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-10-31", "weekday": "Sat", "active_h": 3.85, "span_start": "10:09", "span_end": "16:55", "prompts": 46, "late_prompts": 46, "interrupts": 3, "tool_errors": 22, "short_followups": 19, "frustration": 11, "lines_edited": 2308, "subagents": 3, "sessions": 1, "max_parallel": 1, "nudges": 3, "nudges_firm": 0, "nudges_kind": {"light": 3, "firm": 0, "step back": 0}, "stretch_min": [131, 96], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 12, 9, 2, 0, 0, 10, 13, 0, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-11-01", "weekday": "Sun", "active_h": 0, "span_start": null, "span_end": null, "prompts": 0, "late_prompts": 0, "interrupts": 0, "tool_errors": 0, "short_followups": 0, "frustration": 0, "lines_edited": 0, "subagents": 0, "sessions": 0, "max_parallel": 0, "nudges": 0, "nudges_firm": 0, "nudges_kind": {"light": 0, "firm": 0, "step back": 0}, "stretch_min": [], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-11-02", "weekday": "Mon", "active_h": 4.49, "span_start": "09:29", "span_end": "16:01", "prompts": 53, "late_prompts": 0, "interrupts": 1, "tool_errors": 11, "short_followups": 20, "frustration": 5, "lines_edited": 815, "subagents": 2, "sessions": 2, "max_parallel": 1, "nudges": 2, "nudges_firm": 0, "nudges_kind": {"light": 1, "firm": 0, "step back": 1}, "stretch_min": [74, 71, 118], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 9, 3, 11, 0, 13, 11, 0, 0, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-11-03", "weekday": "Tue", "active_h": 4.27, "span_start": "09:19", "span_end": "15:55", "prompts": 56, "late_prompts": 0, "interrupts": 4, "tool_errors": 25, "short_followups": 19, "frustration": 7, "lines_edited": 670, "subagents": 7, "sessions": 2, "max_parallel": 1, "nudges": 3, "nudges_firm": 0, "nudges_kind": {"light": 1, "firm": 0, "step back": 2}, "stretch_min": [92, 56, 102], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 11, 5, 11, 0, 9, 10, 0, 0, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-11-04", "weekday": "Wed", "active_h": 4.74, "span_start": "09:20", "span_end": "17:20", "prompts": 58, "late_prompts": 0, "interrupts": 0, "tool_errors": 10, "short_followups": 17, "frustration": 0, "lines_edited": 701, "subagents": 11, "sessions": 3, "max_parallel": 1, "nudges": 0, "nudges_firm": 0, "nudges_kind": {"light": 0, "firm": 0, "step back": 0}, "stretch_min": [84, 71, 85, 37], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 7, 4, 12, 0, 11, 8, 3, 3, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-11-05", "weekday": "Thu", "active_h": 4.92, "span_start": "09:23", "span_end": "17:43", "prompts": 62, "late_prompts": 0, "interrupts": 0, "tool_errors": 11, "short_followups": 26, "frustration": 0, "lines_edited": 884, "subagents": 10, "sessions": 3, "max_parallel": 1, "nudges": 1, "nudges_firm": 0, "nudges_kind": {"light": 1, "firm": 0, "step back": 0}, "stretch_min": [72, 47, 113, 56], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 7, 1, 10, 0, 10, 13, 4, 10, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}, {"date": "2026-11-06", "weekday": "Fri", "active_h": 3.8, "span_start": "09:32", "span_end": "15:31", "prompts": 47, "late_prompts": 0, "interrupts": 0, "tool_errors": 14, "short_followups": 15, "frustration": 0, "lines_edited": 652, "subagents": 11, "sessions": 2, "max_parallel": 1, "nudges": 0, "nudges_firm": 0, "nudges_kind": {"light": 0, "firm": 0, "step back": 0}, "stretch_min": [76, 57, 89], "prompts_by_hour": [0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 10, 5, 5, 0, 15, 6, 0, 0, 0, 0, 0, 0, 0, 0], "source": "raw", "no_data": false}], "heatmap": [[0, 0, 0, 0, 0, 0, 0, 0, 11, 44, 49, 15, 24, 16, 41, 28, 0, 0, 3, 13, 17, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 9, 38, 56, 10, 23, 14, 49, 31, 0, 0, 1, 16, 15, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 8, 37, 48, 15, 19, 13, 40, 33, 11, 9, 3, 10, 14, 9, 10, 0], [0, 0, 0, 0, 0, 0, 0, 0, 13, 48, 59, 8, 38, 14, 78, 45, 11, 11, 1, 11, 19, 14, 13, 0], [0, 0, 0, 0, 0, 0, 0, 0, 10, 36, 61, 21, 22, 11, 48, 48, 8, 1, 2, 18, 12, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 12, 9, 2, 0, 0, 10, 13, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]], "friction_hour": [{"hour": 8, "prompts": 51, "interrupts": 9, "tool_errors": 13, "short_followups": 27}, {"hour": 9, "prompts": 203, "interrupts": 9, "tool_errors": 63, "short_followups": 74}, {"hour": 10, "prompts": 285, "interrupts": 14, "tool_errors": 87, "short_followups": 126}, {"hour": 11, "prompts": 86, "interrupts": 3, "tool_errors": 25, "short_followups": 31}, {"hour": 12, "prompts": 128, "interrupts": 3, "tool_errors": 50, "short_followups": 47}, {"hour": 13, "prompts": 68, "interrupts": 7, "tool_errors": 23, "short_followups": 30}, {"hour": 14, "prompts": 256, "interrupts": 15, "tool_errors": 68, "short_followups": 114}, {"hour": 15, "prompts": 195, "interrupts": 5, "tool_errors": 46, "short_followups": 85}, {"hour": 16, "prompts": 43, "interrupts": 0, "tool_errors": 16, "short_followups": 13}, {"hour": 17, "prompts": 21, "interrupts": 0, "tool_errors": 4, "short_followups": 6}, {"hour": 18, "prompts": 10, "interrupts": 0, "tool_errors": 2, "short_followups": 4}, {"hour": 19, "prompts": 68, "interrupts": 9, "tool_errors": 35, "short_followups": 32}, {"hour": 20, "prompts": 77, "interrupts": 11, "tool_errors": 21, "short_followups": 42}, {"hour": 21, "prompts": 23, "interrupts": 7, "tool_errors": 3, "short_followups": 17}, {"hour": 22, "prompts": 23, "interrupts": 2, "tool_errors": 7, "short_followups": 9}], "stretches": [{"start": "2026-10-08T09:19:00+01:00", "end": "2026-10-08T10:46:47+01:00", "minutes": 88, "prompts": 19, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-10-08T11:47:00+01:00", "end": "2026-10-08T12:57:06+01:00", "minutes": 70, "prompts": 15, "sessions": 1, "projects": ["Project C"]}, {"start": "2026-10-08T14:08:00+01:00", "end": "2026-10-08T15:37:40+01:00", "minutes": 90, "prompts": 18, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-10-08T16:36:00+01:00", "end": "2026-10-08T17:04:41+01:00", "minutes": 29, "prompts": 8, "sessions": 1, "projects": ["Project C"]}, {"start": "2026-10-09T09:20:00+01:00", "end": "2026-10-09T10:55:02+01:00", "minutes": 95, "prompts": 19, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-10-09T11:33:00+01:00", "end": "2026-10-09T12:26:40+01:00", "minutes": 54, "prompts": 11, "sessions": 1, "projects": ["Project C"]}, {"start": "2026-10-09T14:15:00+01:00", "end": "2026-10-09T16:03:46+01:00", "minutes": 109, "prompts": 31, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-10-09T16:31:00+01:00", "end": "2026-10-09T17:03:01+01:00", "minutes": 32, "prompts": 8, "sessions": 1, "projects": ["Project C"]}, {"start": "2026-10-11T11:14:00+01:00", "end": "2026-10-11T11:56:47+01:00", "minutes": 43, "prompts": 8, "sessions": 1, "projects": ["Project D"]}, {"start": "2026-10-12T09:41:00+01:00", "end": "2026-10-12T10:36:14+01:00", "minutes": 55, "prompts": 11, "sessions": 1, "projects": ["Project A"]}, {"start": "2026-10-13T09:49:00+01:00", "end": "2026-10-13T10:20:53+01:00", "minutes": 32, "prompts": 6, "sessions": 1, "projects": ["Project A"]}, {"start": "2026-10-13T14:31:00+01:00", "end": "2026-10-13T15:08:41+01:00", "minutes": 38, "prompts": 5, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-10-14T09:52:00+01:00", "end": "2026-10-14T10:29:07+01:00", "minutes": 37, "prompts": 6, "sessions": 1, "projects": ["Project A"]}, {"start": "2026-10-14T14:01:00+01:00", "end": "2026-10-14T14:47:00+01:00", "minutes": 46, "prompts": 8, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-10-15T09:50:00+01:00", "end": "2026-10-15T10:45:07+01:00", "minutes": 55, "prompts": 8, "sessions": 1, "projects": ["Project A"]}, {"start": "2026-10-15T14:01:00+01:00", "end": "2026-10-15T14:56:57+01:00", "minutes": 56, "prompts": 10, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-10-19T09:17:00+01:00", "end": "2026-10-19T10:33:02+01:00", "minutes": 76, "prompts": 16, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-10-19T11:44:00+01:00", "end": "2026-10-19T12:46:35+01:00", "minutes": 63, "prompts": 12, "sessions": 1, "projects": ["Project C"]}, {"start": "2026-10-19T14:13:00+01:00", "end": "2026-10-19T15:44:31+01:00", "minutes": 92, "prompts": 20, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-10-20T09:39:00+01:00", "end": "2026-10-20T11:05:01+01:00", "minutes": 86, "prompts": 20, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-10-20T11:46:00+01:00", "end": "2026-10-20T12:47:07+01:00", "minutes": 61, "prompts": 14, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-10-20T14:25:00+01:00", "end": "2026-10-20T15:58:30+01:00", "minutes": 94, "prompts": 18, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-10-21T09:21:00+01:00", "end": "2026-10-21T10:45:05+01:00", "minutes": 84, "prompts": 18, "sessions": 1, "projects": ["Project A"]}, {"start": "2026-10-21T11:34:00+01:00", "end": "2026-10-21T12:28:44+01:00", "minutes": 55, "prompts": 10, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-10-21T14:07:00+01:00", "end": "2026-10-21T15:42:09+01:00", "minutes": 95, "prompts": 20, "sessions": 1, "projects": ["Project A"]}, {"start": "2026-10-21T16:44:00+01:00", "end": "2026-10-21T17:22:16+01:00", "minutes": 38, "prompts": 10, "sessions": 1, "projects": ["Project D"]}, {"start": "2026-10-22T09:18:00+01:00", "end": "2026-10-22T10:53:10+01:00", "minutes": 95, "prompts": 20, "sessions": 1, "projects": ["Project A"]}, {"start": "2026-10-22T11:54:00+01:00", "end": "2026-10-22T12:44:00+01:00", "minutes": 50, "prompts": 12, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-10-22T14:01:00+01:00", "end": "2026-10-22T15:42:43+01:00", "minutes": 102, "prompts": 21, "sessions": 1, "projects": ["Project A"]}, {"start": "2026-10-23T09:34:00+01:00", "end": "2026-10-23T11:07:35+01:00", "minutes": 94, "prompts": 19, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-10-23T11:38:00+01:00", "end": "2026-10-23T12:33:40+01:00", "minutes": 56, "prompts": 11, "sessions": 1, "projects": ["Project A"]}, {"start": "2026-10-23T14:22:00+01:00", "end": "2026-10-23T15:59:12+01:00", "minutes": 97, "prompts": 21, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-10-26T08:17:00+00:00", "end": "2026-10-26T11:18:30+00:00", "minutes": 182, "prompts": 70, "sessions": 2, "projects": ["Project C", "Project D"]}, {"start": "2026-10-26T12:42:00+00:00", "end": "2026-10-26T13:44:39+00:00", "minutes": 63, "prompts": 18, "sessions": 1, "projects": ["Project C"]}, {"start": "2026-10-26T13:54:48+00:00", "end": "2026-10-26T15:26:54+00:00", "minutes": 92, "prompts": 28, "sessions": 1, "projects": ["Project C"]}, {"start": "2026-10-26T18:49:00+00:00", "end": "2026-10-26T20:52:48+00:00", "minutes": 124, "prompts": 33, "sessions": 1, "projects": ["Project C"]}, {"start": "2026-10-27T08:16:00+00:00", "end": "2026-10-27T11:07:21+00:00", "minutes": 171, "prompts": 57, "sessions": 2, "projects": ["Project C", "Project D"]}, {"start": "2026-10-27T12:49:00+00:00", "end": "2026-10-27T15:45:04+00:00", "minutes": 176, "prompts": 54, "sessions": 2, "projects": ["Project A", "Project C"]}, {"start": "2026-10-27T18:59:00+00:00", "end": "2026-10-27T20:56:33+00:00", "minutes": 118, "prompts": 32, "sessions": 1, "projects": ["Project C"]}, {"start": "2026-10-28T08:29:00+00:00", "end": "2026-10-28T11:32:33+00:00", "minutes": 184, "prompts": 58, "sessions": 2, "projects": ["Project C", "Project D"]}, {"start": "2026-10-28T12:48:00+00:00", "end": "2026-10-28T16:34:12+00:00", "minutes": 226, "prompts": 45, "sessions": 1, "projects": ["Project C"]}, {"start": "2026-10-28T18:53:00+00:00", "end": "2026-10-28T21:27:19+00:00", "minutes": 154, "prompts": 35, "sessions": 1, "projects": ["Project C"]}, {"start": "2026-10-28T21:57:00+00:00", "end": "2026-10-28T22:57:55+00:00", "minutes": 61, "prompts": 11, "sessions": 1, "projects": ["Project C"]}, {"start": "2026-10-29T08:22:00+00:00", "end": "2026-10-29T11:25:50+00:00", "minutes": 184, "prompts": 61, "sessions": 2, "projects": ["Project C", "Project D"]}, {"start": "2026-10-29T12:36:00+00:00", "end": "2026-10-29T15:28:41+00:00", "minutes": 173, "prompts": 71, "sessions": 3, "projects": ["Project A", "Project C", "Project D"]}, {"start": "2026-10-29T18:59:00+00:00", "end": "2026-10-29T21:31:14+00:00", "minutes": 152, "prompts": 44, "sessions": 1, "projects": ["Project C"]}, {"start": "2026-10-29T21:59:00+00:00", "end": "2026-10-29T23:17:49+00:00", "minutes": 79, "prompts": 14, "sessions": 1, "projects": ["Project C"]}, {"start": "2026-10-30T08:28:00+00:00", "end": "2026-10-30T11:30:33+00:00", "minutes": 183, "prompts": 60, "sessions": 2, "projects": ["Project C", "Project D"]}, {"start": "2026-10-30T12:41:00+00:00", "end": "2026-10-30T15:42:20+00:00", "minutes": 181, "prompts": 39, "sessions": 1, "projects": ["Project C"]}, {"start": "2026-10-30T18:52:00+00:00", "end": "2026-10-30T20:57:01+00:00", "minutes": 125, "prompts": 32, "sessions": 1, "projects": ["Project C"]}, {"start": "2026-10-31T10:09:00+00:00", "end": "2026-10-31T12:20:24+00:00", "minutes": 131, "prompts": 23, "sessions": 1, "projects": ["Project C"]}, {"start": "2026-10-31T15:20:00+00:00", "end": "2026-10-31T16:55:53+00:00", "minutes": 96, "prompts": 23, "sessions": 1, "projects": ["Project C"]}, {"start": "2026-11-02T09:29:00+00:00", "end": "2026-11-02T10:43:28+00:00", "minutes": 74, "prompts": 15, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-11-02T11:51:00+00:00", "end": "2026-11-02T13:01:43+00:00", "minutes": 71, "prompts": 14, "sessions": 1, "projects": ["Project C"]}, {"start": "2026-11-02T14:03:00+00:00", "end": "2026-11-02T16:01:20+00:00", "minutes": 118, "prompts": 24, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-11-03T09:19:00+00:00", "end": "2026-11-03T10:51:14+00:00", "minutes": 92, "prompts": 21, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-11-03T11:39:00+00:00", "end": "2026-11-03T12:34:50+00:00", "minutes": 56, "prompts": 16, "sessions": 1, "projects": ["Project C"]}, {"start": "2026-11-03T14:13:00+00:00", "end": "2026-11-03T15:55:26+00:00", "minutes": 102, "prompts": 19, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-11-04T09:20:00+00:00", "end": "2026-11-04T10:44:14+00:00", "minutes": 84, "prompts": 17, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-11-04T11:44:00+00:00", "end": "2026-11-04T12:55:01+00:00", "minutes": 71, "prompts": 16, "sessions": 1, "projects": ["Project C"]}, {"start": "2026-11-04T14:07:00+00:00", "end": "2026-11-04T15:31:31+00:00", "minutes": 85, "prompts": 19, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-11-04T16:44:00+00:00", "end": "2026-11-04T17:20:40+00:00", "minutes": 37, "prompts": 6, "sessions": 1, "projects": ["Project A"]}, {"start": "2026-11-05T09:23:00+00:00", "end": "2026-11-05T10:35:20+00:00", "minutes": 72, "prompts": 14, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-11-05T11:54:00+00:00", "end": "2026-11-05T12:40:47+00:00", "minutes": 47, "prompts": 11, "sessions": 1, "projects": ["Project C"]}, {"start": "2026-11-05T14:17:00+00:00", "end": "2026-11-05T16:09:35+00:00", "minutes": 113, "prompts": 24, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-11-05T16:48:00+00:00", "end": "2026-11-05T17:43:46+00:00", "minutes": 56, "prompts": 13, "sessions": 1, "projects": ["Project D"]}, {"start": "2026-11-06T09:32:00+00:00", "end": "2026-11-06T10:48:01+00:00", "minutes": 76, "prompts": 16, "sessions": 1, "projects": ["Project B"]}, {"start": "2026-11-06T11:36:00+00:00", "end": "2026-11-06T12:33:08+00:00", "minutes": 57, "prompts": 10, "sessions": 1, "projects": ["Project A"]}, {"start": "2026-11-06T14:03:00+00:00", "end": "2026-11-06T15:31:38+00:00", "minutes": 89, "prompts": 21, "sessions": 1, "projects": ["Project B"]}], "prompt_len_by_pos": [{"bucket": "0-30 min", "median_chars": 44, "n": 471}, {"bucket": "30-60 min", "median_chars": 26, "n": 387}, {"bucket": "60-90 min", "median_chars": 23, "n": 274}, {"bucket": "90-150 min", "median_chars": 23, "n": 322}, {"bucket": "150+ min", "median_chars": 23, "n": 83}], "segments": [{"session": "892f902b", "project": "Project B", "start": "2026-10-08T09:19:00+01:00", "end": "2026-10-08T10:48:47+01:00"}, {"session": "892f902b", "project": "Project B", "start": "2026-10-08T14:08:00+01:00", "end": "2026-10-08T15:39:40+01:00"}, {"session": "b2fff17b", "project": "Project C", "start": "2026-10-08T11:47:00+01:00", "end": "2026-10-08T12:59:06+01:00"}, {"session": "b2fff17b", "project": "Project C", "start": "2026-10-08T16:36:00+01:00", "end": "2026-10-08T17:06:41+01:00"}, {"session": "20e27c17", "project": "Project B", "start": "2026-10-09T09:20:00+01:00", "end": "2026-10-09T10:57:02+01:00"}, {"session": "20e27c17", "project": "Project B", "start": "2026-10-09T14:15:00+01:00", "end": "2026-10-09T16:05:46+01:00"}, {"session": "26a55215", "project": "Project C", "start": "2026-10-09T11:33:00+01:00", "end": "2026-10-09T12:28:40+01:00"}, {"session": "26a55215", "project": "Project C", "start": "2026-10-09T16:31:00+01:00", "end": "2026-10-09T17:05:01+01:00"}, {"session": "62fb96f0", "project": "Project D", "start": "2026-10-11T11:14:00+01:00", "end": "2026-10-11T11:58:47+01:00"}, {"session": "4e868ac3", "project": "Project A", "start": "2026-10-12T09:41:00+01:00", "end": "2026-10-12T10:38:14+01:00"}, {"session": "f9607af3", "project": "Project A", "start": "2026-10-13T09:49:00+01:00", "end": "2026-10-13T10:22:53+01:00"}, {"session": "526256de", "project": "Project B", "start": "2026-10-13T14:31:00+01:00", "end": "2026-10-13T15:10:41+01:00"}, {"session": "acddefa4", "project": "Project A", "start": "2026-10-14T09:52:00+01:00", "end": "2026-10-14T10:31:07+01:00"}, {"session": "7cf0b2c5", "project": "Project B", "start": "2026-10-14T14:01:00+01:00", "end": "2026-10-14T14:49:00+01:00"}, {"session": "9c1afb6e", "project": "Project A", "start": "2026-10-15T09:50:00+01:00", "end": "2026-10-15T10:47:07+01:00"}, {"session": "0269b809", "project": "Project B", "start": "2026-10-15T14:01:00+01:00", "end": "2026-10-15T14:58:57+01:00"}, {"session": "6a2a93c8", "project": "Project B", "start": "2026-10-19T09:17:00+01:00", "end": "2026-10-19T10:35:02+01:00"}, {"session": "6a2a93c8", "project": "Project B", "start": "2026-10-19T14:13:00+01:00", "end": "2026-10-19T15:46:31+01:00"}, {"session": "e87a7afd", "project": "Project C", "start": "2026-10-19T11:44:00+01:00", "end": "2026-10-19T12:48:35+01:00"}, {"session": "4d9c350f", "project": "Project B", "start": "2026-10-20T09:39:00+01:00", "end": "2026-10-20T11:07:01+01:00"}, {"session": "4d9c350f", "project": "Project B", "start": "2026-10-20T11:46:00+01:00", "end": "2026-10-20T12:49:07+01:00"}, {"session": "4d9c350f", "project": "Project B", "start": "2026-10-20T14:25:00+01:00", "end": "2026-10-20T16:00:30+01:00"}, {"session": "149bc881", "project": "Project A", "start": "2026-10-21T09:21:00+01:00", "end": "2026-10-21T10:47:05+01:00"}, {"session": "149bc881", "project": "Project A", "start": "2026-10-21T14:07:00+01:00", "end": "2026-10-21T15:44:09+01:00"}, {"session": "fd632820", "project": "Project B", "start": "2026-10-21T11:34:00+01:00", "end": "2026-10-21T12:30:44+01:00"}, {"session": "ff5d213b", "project": "Project D", "start": "2026-10-21T16:44:00+01:00", "end": "2026-10-21T17:24:16+01:00"}, {"session": "fc92701a", "project": "Project A", "start": "2026-10-22T09:18:00+01:00", "end": "2026-10-22T10:55:10+01:00"}, {"session": "fc92701a", "project": "Project A", "start": "2026-10-22T14:01:00+01:00", "end": "2026-10-22T15:44:43+01:00"}, {"session": "061d42aa", "project": "Project B", "start": "2026-10-22T11:54:00+01:00", "end": "2026-10-22T12:46:00+01:00"}, {"session": "568a85ed", "project": "Project B", "start": "2026-10-23T09:34:00+01:00", "end": "2026-10-23T11:09:35+01:00"}, {"session": "568a85ed", "project": "Project B", "start": "2026-10-23T14:22:00+01:00", "end": "2026-10-23T16:01:12+01:00"}, {"session": "a1deecd3", "project": "Project A", "start": "2026-10-23T11:38:00+01:00", "end": "2026-10-23T12:35:40+01:00"}, {"session": "0d7bc07b", "project": "Project C", "start": "2026-10-26T08:17:00+00:00", "end": "2026-10-26T11:15:35+00:00"}, {"session": "0d7bc07b", "project": "Project C", "start": "2026-10-26T12:42:00+00:00", "end": "2026-10-26T13:46:39+00:00"}, {"session": "0d7bc07b", "project": "Project C", "start": "2026-10-26T13:54:48+00:00", "end": "2026-10-26T15:28:54+00:00"}, {"session": "0d7bc07b", "project": "Project C", "start": "2026-10-26T18:49:00+00:00", "end": "2026-10-26T20:54:48+00:00"}, {"session": "8933c25e", "project": "Project D", "start": "2026-10-26T09:40:00+00:00", "end": "2026-10-26T11:20:30+00:00"}, {"session": "d15900d6", "project": "Project C", "start": "2026-10-27T08:16:00+00:00", "end": "2026-10-27T10:55:49+00:00"}, {"session": "d15900d6", "project": "Project C", "start": "2026-10-27T12:49:00+00:00", "end": "2026-10-27T15:47:04+00:00"}, {"session": "d15900d6", "project": "Project C", "start": "2026-10-27T18:59:00+00:00", "end": "2026-10-27T20:58:33+00:00"}, {"session": "df4aa5ba", "project": "Project D", "start": "2026-10-27T09:50:00+00:00", "end": "2026-10-27T11:09:21+00:00"}, {"session": "8a447712", "project": "Project A", "start": "2026-10-27T14:10:00+00:00", "end": "2026-10-27T15:01:22+00:00"}, {"session": "37dd36ba", "project": "Project C", "start": "2026-10-28T08:29:00+00:00", "end": "2026-10-28T11:34:33+00:00"}, {"session": "37dd36ba", "project": "Project C", "start": "2026-10-28T12:48:00+00:00", "end": "2026-10-28T16:36:12+00:00"}, {"session": "37dd36ba", "project": "Project C", "start": "2026-10-28T18:53:00+00:00", "end": "2026-10-28T21:29:19+00:00"}, {"session": "37dd36ba", "project": "Project C", "start": "2026-10-28T21:57:00+00:00", "end": "2026-10-28T22:59:55+00:00"}, {"session": "86ed9232", "project": "Project D", "start": "2026-10-28T09:50:00+00:00", "end": "2026-10-28T10:53:44+00:00"}, {"session": "59f4cd90", "project": "Project C", "start": "2026-10-29T08:22:00+00:00", "end": "2026-10-29T11:27:50+00:00"}, {"session": "59f4cd90", "project": "Project C", "start": "2026-10-29T12:36:00+00:00", "end": "2026-10-29T15:30:41+00:00"}, {"session": "59f4cd90", "project": "Project C", "start": "2026-10-29T18:59:00+00:00", "end": "2026-10-29T21:33:14+00:00"}, {"session": "59f4cd90", "project": "Project C", "start": "2026-10-29T21:59:00+00:00", "end": "2026-10-29T23:19:49+00:00"}, {"session": "1886bbb4", "project": "Project D", "start": "2026-10-29T09:31:00+00:00", "end": "2026-10-29T10:49:17+00:00"}, {"session": "1886bbb4", "project": "Project D", "start": "2026-10-29T14:27:00+00:00", "end": "2026-10-29T15:14:31+00:00"}, {"session": "e9195576", "project": "Project A", "start": "2026-10-29T14:20:00+00:00", "end": "2026-10-29T15:23:42+00:00"}, {"session": "c0eb00f3", "project": "Project C", "start": "2026-10-30T08:28:00+00:00", "end": "2026-10-30T11:32:33+00:00"}, {"session": "c0eb00f3", "project": "Project C", "start": "2026-10-30T12:41:00+00:00", "end": "2026-10-30T15:44:20+00:00"}, {"session": "c0eb00f3", "project": "Project C", "start": "2026-10-30T18:52:00+00:00", "end": "2026-10-30T20:59:01+00:00"}, {"session": "0a53e24a", "project": "Project D", "start": "2026-10-30T09:43:00+00:00", "end": "2026-10-30T11:23:03+00:00"}, {"session": "96cface6", "project": "Project C", "start": "2026-10-31T10:09:00+00:00", "end": "2026-10-31T12:22:24+00:00"}, {"session": "96cface6", "project": "Project C", "start": "2026-10-31T15:20:00+00:00", "end": "2026-10-31T16:57:53+00:00"}, {"session": "618cc028", "project": "Project B", "start": "2026-11-02T09:29:00+00:00", "end": "2026-11-02T10:45:28+00:00"}, {"session": "618cc028", "project": "Project B", "start": "2026-11-02T14:03:00+00:00", "end": "2026-11-02T16:03:20+00:00"}, {"session": "b67c75f9", "project": "Project C", "start": "2026-11-02T11:51:00+00:00", "end": "2026-11-02T13:03:43+00:00"}, {"session": "2397fc22", "project": "Project B", "start": "2026-11-03T09:19:00+00:00", "end": "2026-11-03T10:53:14+00:00"}, {"session": "2397fc22", "project": "Project B", "start": "2026-11-03T14:13:00+00:00", "end": "2026-11-03T15:57:26+00:00"}, {"session": "f663e1a8", "project": "Project C", "start": "2026-11-03T11:39:00+00:00", "end": "2026-11-03T12:36:50+00:00"}, {"session": "e053ed38", "project": "Project B", "start": "2026-11-04T09:20:00+00:00", "end": "2026-11-04T10:46:14+00:00"}, {"session": "e053ed38", "project": "Project B", "start": "2026-11-04T14:07:00+00:00", "end": "2026-11-04T15:33:31+00:00"}, {"session": "207354f5", "project": "Project C", "start": "2026-11-04T11:44:00+00:00", "end": "2026-11-04T12:57:01+00:00"}, {"session": "87d4e17e", "project": "Project A", "start": "2026-11-04T16:44:00+00:00", "end": "2026-11-04T17:22:40+00:00"}, {"session": "e87cff53", "project": "Project B", "start": "2026-11-05T09:23:00+00:00", "end": "2026-11-05T10:37:20+00:00"}, {"session": "e87cff53", "project": "Project B", "start": "2026-11-05T14:17:00+00:00", "end": "2026-11-05T16:11:35+00:00"}, {"session": "47386c24", "project": "Project C", "start": "2026-11-05T11:54:00+00:00", "end": "2026-11-05T12:42:47+00:00"}, {"session": "94f21dee", "project": "Project D", "start": "2026-11-05T16:48:00+00:00", "end": "2026-11-05T17:45:46+00:00"}, {"session": "c97f2f76", "project": "Project B", "start": "2026-11-06T09:32:00+00:00", "end": "2026-11-06T10:50:01+00:00"}, {"session": "c97f2f76", "project": "Project B", "start": "2026-11-06T14:03:00+00:00", "end": "2026-11-06T15:33:38+00:00"}, {"session": "e2912504", "project": "Project A", "start": "2026-11-06T11:36:00+00:00", "end": "2026-11-06T12:35:08+00:00"}], "nudges": [{"ts": "2026-10-08T10:30:16+01:00", "kind": "step back", "stretch_min": 71, "signals": ["retry loop", "frustration"], "session": "892f902b-d23f-0824-128b-2f330c5c7fd0"}, {"ts": "2026-10-09T10:52:24+01:00", "kind": "light", "stretch_min": 92, "signals": [], "session": "20e27c17-112e-d1df-1b69-567e667cd60b"}, {"ts": "2026-10-09T14:52:08+01:00", "kind": "step back", "stretch_min": 37, "signals": ["retry loop", "frustration"], "session": "20e27c17-112e-d1df-1b69-567e667cd60b"}, {"ts": "2026-10-09T15:46:45+01:00", "kind": "light", "stretch_min": 92, "signals": [], "session": "20e27c17-112e-d1df-1b69-567e667cd60b"}, {"ts": "2026-10-20T10:59:45+01:00", "kind": "step back", "stretch_min": 81, "signals": ["retry loop", "review load"], "session": "4d9c350f-4143-a87f-199f-6c54e65f99a6"}, {"ts": "2026-10-21T15:37:04+01:00", "kind": "light", "stretch_min": 90, "signals": ["retry loop"], "session": "149bc881-b7fc-7fbd-e046-65ee781247b3"}, {"ts": "2026-10-22T10:50:28+01:00", "kind": "light", "stretch_min": 92, "signals": ["retry loop"], "session": "fc92701a-c44e-a71d-def9-fd0b783a7bc2"}, {"ts": "2026-10-22T15:31:50+01:00", "kind": "light", "stretch_min": 91, "signals": ["retry loop"], "session": "fc92701a-c44e-a71d-def9-fd0b783a7bc2"}, {"ts": "2026-10-23T10:56:39+01:00", "kind": "step back", "stretch_min": 83, "signals": ["retry loop", "frustration"], "session": "568a85ed-e24c-a294-d806-7e27f222e390"}, {"ts": "2026-10-23T15:48:02+01:00", "kind": "step back", "stretch_min": 86, "signals": ["retry loop", "review load"], "session": "568a85ed-e24c-a294-d806-7e27f222e390"}, {"ts": "2026-10-26T08:28:17+00:00", "kind": "step back", "stretch_min": 11, "signals": ["retry loop", "late hours"], "session": "0d7bc07b-dda9-6684-ee75-6df5dad3c58d"}, {"ts": "2026-10-26T09:16:21+00:00", "kind": "step back", "stretch_min": 59, "signals": ["retry loop", "frustration", "review load"], "session": "0d7bc07b-dda9-6684-ee75-6df5dad3c58d"}, {"ts": "2026-10-26T10:02:33+00:00", "kind": "light", "stretch_min": 106, "signals": ["retry loop", "frustration", "review load"], "session": "0d7bc07b-dda9-6684-ee75-6df5dad3c58d"}, {"ts": "2026-10-26T10:48:32+00:00", "kind": "firm", "stretch_min": 152, "signals": ["retry loop", "review load"], "session": "0d7bc07b-dda9-6684-ee75-6df5dad3c58d"}, {"ts": "2026-10-26T13:10:31+00:00", "kind": "step back", "stretch_min": 29, "signals": ["retry loop", "review load"], "session": "0d7bc07b-dda9-6684-ee75-6df5dad3c58d"}, {"ts": "2026-10-26T14:00:16+00:00", "kind": "step back", "stretch_min": 5, "signals": ["retry loop", "frustration"], "session": "0d7bc07b-dda9-6684-ee75-6df5dad3c58d"}, {"ts": "2026-10-26T14:48:51+00:00", "kind": "light", "stretch_min": 54, "signals": ["frustration", "review load"], "session": "0d7bc07b-dda9-6684-ee75-6df5dad3c58d"}, {"ts": "2026-10-26T20:06:43+00:00", "kind": "step back", "stretch_min": 78, "signals": ["retry loop", "frustration", "review load"], "session": "0d7bc07b-dda9-6684-ee75-6df5dad3c58d"}, {"ts": "2026-10-26T20:51:47+00:00", "kind": "light", "stretch_min": 123, "signals": ["retry loop", "frustration", "review load"], "session": "0d7bc07b-dda9-6684-ee75-6df5dad3c58d"}, {"ts": "2026-10-27T08:46:03+00:00", "kind": "light", "stretch_min": 30, "signals": ["review load", "late hours"], "session": "d15900d6-398a-53ce-1496-479a67a1a46e"}, {"ts": "2026-10-27T09:31:46+00:00", "kind": "step back", "stretch_min": 76, "signals": ["retry loop", "frustration", "review load"], "session": "d15900d6-398a-53ce-1496-479a67a1a46e"}, {"ts": "2026-10-27T10:20:19+00:00", "kind": "light", "stretch_min": 124, "signals": ["retry loop", "review load"], "session": "d15900d6-398a-53ce-1496-479a67a1a46e"}, {"ts": "2026-10-27T13:26:43+00:00", "kind": "light", "stretch_min": 38, "signals": ["frustration", "review load"], "session": "d15900d6-398a-53ce-1496-479a67a1a46e"}, {"ts": "2026-10-27T14:15:35+00:00", "kind": "step back", "stretch_min": 87, "signals": ["retry loop", "review load"], "session": "8a447712-1c67-055f-8799-eddfa85fb3cd"}, {"ts": "2026-10-27T15:02:26+00:00", "kind": "light", "stretch_min": 133, "signals": ["retry loop", "review load"], "session": "d15900d6-398a-53ce-1496-479a67a1a46e"}, {"ts": "2026-10-27T19:17:50+00:00", "kind": "step back", "stretch_min": 19, "signals": ["retry loop", "frustration"], "session": "d15900d6-398a-53ce-1496-479a67a1a46e"}, {"ts": "2026-10-27T20:03:58+00:00", "kind": "step back", "stretch_min": 65, "signals": ["retry loop", "frustration", "review load"], "session": "d15900d6-398a-53ce-1496-479a67a1a46e"}, {"ts": "2026-10-27T20:51:21+00:00", "kind": "light", "stretch_min": 112, "signals": ["review load"], "session": "d15900d6-398a-53ce-1496-479a67a1a46e"}, {"ts": "2026-10-28T08:44:17+00:00", "kind": "step back", "stretch_min": 15, "signals": ["retry loop", "late hours"], "session": "37dd36ba-81dc-8563-ba09-80a8323aa9ce"}, {"ts": "2026-10-28T09:53:27+00:00", "kind": "step back", "stretch_min": 84, "signals": ["retry loop", "review load"], "session": "37dd36ba-81dc-8563-ba09-80a8323aa9ce"}, {"ts": "2026-10-28T10:39:39+00:00", "kind": "light", "stretch_min": 131, "signals": ["retry loop", "review load"], "session": "86ed9232-2fad-2e51-4458-75f537f8b668"}, {"ts": "2026-10-28T11:26:31+00:00", "kind": "firm", "stretch_min": 178, "signals": ["frustration", "review load"], "session": "37dd36ba-81dc-8563-ba09-80a8323aa9ce"}, {"ts": "2026-10-28T14:33:50+00:00", "kind": "light", "stretch_min": 106, "signals": ["review load"], "session": "37dd36ba-81dc-8563-ba09-80a8323aa9ce"}, {"ts": "2026-10-28T15:20:04+00:00", "kind": "firm", "stretch_min": 152, "signals": ["retry loop", "frustration", "review load"], "session": "37dd36ba-81dc-8563-ba09-80a8323aa9ce"}, {"ts": "2026-10-28T16:09:21+00:00", "kind": "firm", "stretch_min": 201, "signals": ["retry loop", "frustration", "review load"], "session": "37dd36ba-81dc-8563-ba09-80a8323aa9ce"}, {"ts": "2026-10-28T19:07:33+00:00", "kind": "step back", "stretch_min": 15, "signals": ["retry loop", "review load"], "session": "37dd36ba-81dc-8563-ba09-80a8323aa9ce"}, {"ts": "2026-10-28T20:25:56+00:00", "kind": "light", "stretch_min": 93, "signals": ["review load"], "session": "37dd36ba-81dc-8563-ba09-80a8323aa9ce"}, {"ts": "2026-10-28T21:11:30+00:00", "kind": "light", "stretch_min": 138, "signals": ["review load"], "session": "37dd36ba-81dc-8563-ba09-80a8323aa9ce"}, {"ts": "2026-10-28T22:54:16+00:00", "kind": "step back", "stretch_min": 57, "signals": ["retry loop", "frustration", "review load"], "session": "37dd36ba-81dc-8563-ba09-80a8323aa9ce"}, {"ts": "2026-10-29T08:30:46+00:00", "kind": "light", "stretch_min": 9, "signals": ["review load", "late hours"], "session": "59f4cd90-1fbc-be7f-fb42-f746b384dfe0"}, {"ts": "2026-10-29T09:17:51+00:00", "kind": "step back", "stretch_min": 56, "signals": ["retry loop", "frustration", "review load"], "session": "59f4cd90-1fbc-be7f-fb42-f746b384dfe0"}, {"ts": "2026-10-29T10:03:06+00:00", "kind": "light", "stretch_min": 101, "signals": ["retry loop", "frustration", "review load"], "session": "1886bbb4-1ad1-7e1f-7fee-755c2e165653"}, {"ts": "2026-10-29T10:52:33+00:00", "kind": "firm", "stretch_min": 151, "signals": ["review load"], "session": "59f4cd90-1fbc-be7f-fb42-f746b384dfe0"}, {"ts": "2026-10-29T13:14:36+00:00", "kind": "step back", "stretch_min": 39, "signals": ["retry loop", "review load"], "session": "59f4cd90-1fbc-be7f-fb42-f746b384dfe0"}, {"ts": "2026-10-29T14:10:35+00:00", "kind": "light", "stretch_min": 95, "signals": ["review load"], "session": "59f4cd90-1fbc-be7f-fb42-f746b384dfe0"}, {"ts": "2026-10-29T14:55:41+00:00", "kind": "light", "stretch_min": 140, "signals": ["retry loop", "frustration", "review load"], "session": "1886bbb4-1ad1-7e1f-7fee-755c2e165653"}, {"ts": "2026-10-29T20:16:32+00:00", "kind": "step back", "stretch_min": 78, "signals": ["retry loop", "frustration", "review load"], "session": "59f4cd90-1fbc-be7f-fb42-f746b384dfe0"}, {"ts": "2026-10-29T21:02:33+00:00", "kind": "light", "stretch_min": 124, "signals": ["retry loop", "review load"], "session": "59f4cd90-1fbc-be7f-fb42-f746b384dfe0"}, {"ts": "2026-10-29T22:38:56+00:00", "kind": "step back", "stretch_min": 40, "signals": ["retry loop", "review load"], "session": "59f4cd90-1fbc-be7f-fb42-f746b384dfe0"}, {"ts": "2026-10-30T08:39:13+00:00", "kind": "step back", "stretch_min": 11, "signals": ["retry loop", "late hours"], "session": "c0eb00f3-9ea9-9245-a999-94bfb35fb2e8"}, {"ts": "2026-10-30T09:59:22+00:00", "kind": "light", "stretch_min": 91, "signals": ["review load"], "session": "c0eb00f3-9ea9-9245-a999-94bfb35fb2e8"}, {"ts": "2026-10-30T10:46:47+00:00", "kind": "light", "stretch_min": 139, "signals": ["review load"], "session": "c0eb00f3-9ea9-9245-a999-94bfb35fb2e8"}, {"ts": "2026-10-30T13:44:33+00:00", "kind": "light", "stretch_min": 64, "signals": ["frustration", "review load"], "session": "c0eb00f3-9ea9-9245-a999-94bfb35fb2e8"}, {"ts": "2026-10-30T14:32:16+00:00", "kind": "light", "stretch_min": 111, "signals": ["retry loop", "review load"], "session": "c0eb00f3-9ea9-9245-a999-94bfb35fb2e8"}, {"ts": "2026-10-30T15:18:54+00:00", "kind": "firm", "stretch_min": 158, "signals": ["review load"], "session": "c0eb00f3-9ea9-9245-a999-94bfb35fb2e8"}, {"ts": "2026-10-30T19:23:33+00:00", "kind": "step back", "stretch_min": 32, "signals": ["retry loop", "review load"], "session": "c0eb00f3-9ea9-9245-a999-94bfb35fb2e8"}, {"ts": "2026-10-30T20:23:45+00:00", "kind": "light", "stretch_min": 92, "signals": ["review load"], "session": "c0eb00f3-9ea9-9245-a999-94bfb35fb2e8"}, {"ts": "2026-10-31T10:37:59+00:00", "kind": "light", "stretch_min": 29, "signals": ["review load", "late hours"], "session": "96cface6-47d6-5f94-1c94-681924d06efb"}, {"ts": "2026-10-31T11:40:58+00:00", "kind": "light", "stretch_min": 92, "signals": ["review load"], "session": "96cface6-47d6-5f94-1c94-681924d06efb"}, {"ts": "2026-10-31T16:51:03+00:00", "kind": "light", "stretch_min": 91, "signals": ["frustration", "review load"], "session": "96cface6-47d6-5f94-1c94-681924d06efb"}, {"ts": "2026-11-02T14:24:58+00:00", "kind": "step back", "stretch_min": 22, "signals": ["retry loop", "frustration"], "session": "618cc028-a71d-0d3d-5d43-6d60fd858571"}, {"ts": "2026-11-02T15:39:57+00:00", "kind": "light", "stretch_min": 97, "signals": [], "session": "618cc028-a71d-0d3d-5d43-6d60fd858571"}, {"ts": "2026-11-03T10:31:21+00:00", "kind": "step back", "stretch_min": 72, "signals": ["retry loop", "frustration"], "session": "2397fc22-766d-ed2c-7042-c42c1064df43"}, {"ts": "2026-11-03T12:30:32+00:00", "kind": "step back", "stretch_min": 52, "signals": ["retry loop", "frustration"], "session": "f663e1a8-0a85-5dc8-5612-93eb394b873c"}, {"ts": "2026-11-03T15:47:12+00:00", "kind": "light", "stretch_min": 94, "signals": [], "session": "2397fc22-766d-ed2c-7042-c42c1064df43"}, {"ts": "2026-11-05T15:48:10+00:00", "kind": "light", "stretch_min": 91, "signals": ["retry loop"], "session": "e87cff53-859e-113c-a849-0134f5a0d1c5"}], "sensitivity": [{"light_min": 45, "nudges": 103, "per_active_day": 4.48, "nudges_prompt_only": 103}, {"light_min": 60, "nudges": 84, "per_active_day": 3.65, "nudges_prompt_only": 85}, {"light_min": 75, "nudges": 73, "per_active_day": 3.17, "nudges_prompt_only": 74}, {"light_min": 90, "nudges": 66, "per_active_day": 2.87, "nudges_prompt_only": 66}, {"light_min": 120, "nudges": 58, "per_active_day": 2.52, "nudges_prompt_only": 58}, {"light_min": 150, "nudges": 58, "per_active_day": 2.52, "nudges_prompt_only": 57}], "parallel_dist": [[1, 1271], [2, 225], [3, 41]], "projects": [["Project C", 770], ["Project B", 450], ["Project A", 173], ["Project D", 144]], "checkins": [{"ts": "2026-10-12T14:40:00+01:00", "instrument": "samn-perelli", "value": 2}, {"ts": "2026-10-13T14:40:00+01:00", "instrument": "samn-perelli", "value": 2}, {"ts": "2026-10-15T14:40:00+01:00", "instrument": "samn-perelli", "value": 2}, {"ts": "2026-10-16T14:40:00+01:00", "instrument": "samn-perelli", "value": 2}, {"ts": "2026-10-16T17:30:00+01:00", "instrument": "burnout", "value": 1}, {"ts": "2026-10-19T11:40:00+01:00", "instrument": "samn-perelli", "value": 4}, {"ts": "2026-10-20T11:40:00+01:00", "instrument": "samn-perelli", "value": 4}, {"ts": "2026-10-21T15:10:00+01:00", "instrument": "samn-perelli", "value": 4}, {"ts": "2026-10-22T11:40:00+01:00", "instrument": "samn-perelli", "value": 2}, {"ts": "2026-10-23T17:30:00+01:00", "instrument": "burnout", "value": 2}, {"ts": "2026-10-27T11:40:00+00:00", "instrument": "samn-perelli", "value": 5}, {"ts": "2026-10-28T21:20:00+00:00", "instrument": "samn-perelli", "value": 6}, {"ts": "2026-10-30T17:30:00+00:00", "instrument": "burnout", "value": 3}, {"ts": "2026-10-31T15:10:00+00:00", "instrument": "samn-perelli", "value": 6}, {"ts": "2026-10-31T15:10:00+00:00", "instrument": "tlx-mental", "value": 7}, {"ts": "2026-11-02T15:10:00+00:00", "instrument": "samn-perelli", "value": 3}, {"ts": "2026-11-04T11:40:00+00:00", "instrument": "samn-perelli", "value": 2}, {"ts": "2026-11-05T11:40:00+00:00", "instrument": "samn-perelli", "value": 3}, {"ts": "2026-11-06T17:30:00+00:00", "instrument": "burnout", "value": 2}]};
+</script>
+<script>
+/* Chart code for the session-patterns report. Plain SVG, no libraries. */
+(function () {
+"use strict";
+const D = DATA;
+const NS = "http://www.w3.org/2000/svg";
+const $ = (id) => document.getElementById(id);
+const tip = $("tip");
+const fmt = (n, d = 0) => Number(n).toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: d });
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const shortDate = (iso) => new Date(iso + "T12:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+const hhmm = (iso) => new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
+
+function el(tag, attrs = {}, parent) {
+  const n = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+function svg(container, w, h) {
+  const s = el("svg", { viewBox: `0 0 ${w} ${h}`, width: "100%", role: "img" });
+  s.style.minWidth = Math.min(w, 520) + "px";
+  $(container).appendChild(s);
+  return s;
+}
+function text(s, x, y, str, attrs = {}) {
+  const t = el("text", { x, y, ...attrs }, s);
+  t.textContent = str;
+  return t;
+}
+function showTip(evt, html) {
+  tip.innerHTML = html;
+  tip.style.display = "block";
+  const r = tip.getBoundingClientRect();
+  let x = evt.clientX + 14, y = evt.clientY + 14;
+  if (x + r.width > innerWidth - 8) x = evt.clientX - r.width - 14;
+  if (y + r.height > innerHeight - 8) y = evt.clientY - r.height - 14;
+  tip.style.left = x + "px";
+  tip.style.top = y + "px";
+}
+function hideTip() { tip.style.display = "none"; }
+function hover(node, html) {
+  node.setAttribute("tabindex", "0");
+  node.addEventListener("mousemove", (e) => showTip(e, html));
+  node.addEventListener("mouseleave", hideTip);
+  node.addEventListener("focus", () => {
+    const r = node.getBoundingClientRect();
+    showTip({ clientX: r.right, clientY: r.top }, html);
+  });
+  node.addEventListener("blur", hideTip);
+}
+function niceMax(v) {
+  // Smallest 4 x step >= v where step is 1, 2 or 5 x 10^k (integer steps below 1).
+  if (v <= 0) return 4;
+  const raw = v / 4, p = Math.pow(10, Math.floor(Math.log10(raw)));
+  for (const m of [1, 2, 5, 10]) { const st = Math.max(1, m * p); if (st * 4 >= v) return st * 4; }
+  return 40 * p;
+}
+// Bar with 4px rounded data-end, square at the baseline.
+function barPath(x, y, w, h) {
+  if (h <= 0) return "";
+  const r = Math.min(4, w / 2, h);
+  return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+}
+function legend(id, items) {
+  $(id).innerHTML = items.map(([label, color, kind]) =>
+    `<span><i class="${kind || ""}" style="background:var(${color})"></i>${esc(label)}</span>`).join("");
+}
+function table(id, cols, rows) {
+  $(id).innerHTML = `<table><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${
+    rows.map((r) => `<tr>${r.map((v) => `<td>${esc(v)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+}
+// Y grid + ticks; returns y(v) scale.
+function yAxis(s, m, W, H, max, fmtTick = (v) => fmt(v)) {
+  const y = (v) => m.t + (H - m.t - m.b) * (1 - v / max);
+  for (let i = 0; i <= 4; i++) {
+    const v = (max / 4) * i, yy = y(v);
+    el("line", { x1: m.l, x2: W - m.r, y1: yy, y2: yy, class: i ? "grid" : "axis" }, s);
+    text(s, m.l - 6, yy + 4, fmtTick(v), { "text-anchor": "end" });
+  }
+  return y;
+}
+
+// ---- Header, tiles, findings ------------------------------------------------
+const T = D.totals, TH = D.thresholds;
+const C = D.coverage || { history_days: 0, no_data_days: 0 };
+const cov = [C.history_days ? `${C.history_days} days from daily history` : "", C.no_data_days ? `${C.no_data_days} days with no data` : ""].filter(Boolean).join(" · ");
+$("subtitle").textContent = `Last ${D.days} days (since ${shortDate(D.since)})${cov ? " · " + cov : ""} · generated ${D.generated.replace("T", " ")}`;
+$("footer").textContent = `Thresholds: break ≥ ${TH.break_gap} min · light nudge ${TH.light} min · firm ${TH.firm} min · cool-down ${TH.cooldown} min · working hours ${TH.work_start}:00–${TH.work_end}:00 weekdays. Raw logs last as long as cleanupPeriodDays (30 by default); older days come from the numbers-only daily history (--save-daily). Timeline, friction-by-hour, prompt-length and sensitivity charts use raw logs only.`;
+const tiles = [
+  ["Active hours", fmt(T.active_h, 1), `${T.active_days} active days`],
+  ["Days with no activity", T.zero_days, "rough recovery days"],
+  ["Outside working hours", fmt(T.late_share * 100) + "%", "of prompts"],
+  ["Longest stretch", T.longest_stretch + " min", `median ${T.median_stretch} min`],
+  ["Interruptions", T.interrupts, `${fmt(T.tool_errors)} failed tool calls`],
+  ["Replayed nudges", T.nudges, `${fmt(T.nudges / Math.max(T.active_days, 1), 2)} per active day`],
+];
+$("tiles").innerHTML = tiles.map(([l, v, s]) =>
+  `<div class="tile"><div class="label">${esc(l)}</div><div class="value">${esc(v)}</div><div class="sub">${esc(s)}</div></div>`).join("");
+
+const findings = [];
+const busiest = [...D.daily].sort((a, b) => b.active_h - a.active_h)[0];
+if (busiest && busiest.active_h) findings.push(`Busiest day: ${busiest.weekday} ${shortDate(busiest.date)} with ${fmt(busiest.active_h, 1)} active hours (${busiest.span_start}–${busiest.span_end}).`);
+findings.push(T.stretches_over_light
+  ? `${T.stretches_over_light} stretch${T.stretches_over_light === 1 ? "" : "es"} passed ${TH.light} min, ${T.stretches_over_firm} passed ${TH.firm} min.`
+  : `No stretch reached ${TH.light} min: by time alone, the watcher would rarely speak up.`);
+if (T.prompt_only_longest < T.longest_stretch)
+  findings.push(`Counting only gaps between your prompts, the longest stretch would be ${T.prompt_only_longest} min instead of ${T.longest_stretch}: Claude working for 10+ minutes looks like a break. The watcher's activity hooks now count both sides.`);
+const weekendPrompts = D.heatmap.slice(5).flat().reduce((a, b) => a + b, 0);
+if (weekendPrompts) findings.push(`${weekendPrompts} prompt${weekendPrompts === 1 ? " was" : "s were"} sent on weekends.`);
+$("findings").innerHTML = findings.map((f) => `<li>${esc(f)}</li>`).join("");
+
+// ---- 1. Daily active hours ----------------------------------------------------
+(function () {
+  const W = 1040, H = 240, m = { t: 12, r: 12, b: 34, l: 40 };
+  const s = svg("c-daily", W, H);
+  const n = D.daily.length, band = (W - m.l - m.r) / n, bw = Math.min(24, band - 2);
+  const max = niceMax(Math.max(...D.daily.map((d) => d.active_h), 1));
+  const y = yAxis(s, m, W, H, max, (v) => v + "h");
+  const avg = D.daily.map((d, i) => {
+    const w = D.daily.slice(Math.max(0, i - 6), i + 1).filter((x) => !x.no_data);
+    return w.length ? w.reduce((a, b) => a + b.active_h, 0) / w.length : null;
+  });
+  D.daily.forEach((d, i) => {
+    const x = m.l + i * band + (band - bw) / 2;
+    if (d.no_data) el("rect", { x, y: y(0) - 3, width: bw, height: 3, rx: 1.5, fill: "none", stroke: "var(--grid)", "stroke-dasharray": "2 2" }, s);
+    else if (d.active_h) el("path", { d: barPath(x, y(d.active_h), bw, y(0) - y(d.active_h)), fill: "var(--series-1)" }, s);
+    else el("rect", { x, y: y(0) - 3, width: bw, height: 3, rx: 1.5, fill: "var(--grid)" }, s);
+    if (i % Math.ceil(n / 15) === 0 || i === n - 1) text(s, x + bw / 2, H - m.b + 16, shortDate(d.date), { "text-anchor": "middle" });
+    const hit = el("rect", { x: m.l + i * band, y: m.t, width: band, height: H - m.t - m.b, class: "hit" }, s);
+    hover(hit, `<b>${d.weekday} ${shortDate(d.date)}</b><br>${d.active_h ? `${fmt(d.active_h, 1)} active hours<br><span class="muted">${d.span_start}–${d.span_end} · ${d.prompts} prompts · ${d.sessions} sessions</span>` : d.no_data ? "No data (before raw logs and daily history)" : "No activity"}<br><span class="muted">7-day avg ${avg[i] == null ? "–" : fmt(avg[i], 1) + "h"}</span>`);
+  });
+  const pts = avg.map((v, i) => v == null ? null : `${m.l + i * band + band / 2},${y(v)}`).filter(Boolean).join(" ");
+  el("polyline", { points: pts, fill: "none", stroke: "var(--text-secondary)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", "pointer-events": "none" }, s);
+  const last = avg.length - 1;
+  text(s, W - m.r, m.t + 4, `7-day avg now ${fmt(avg[last] || 0, 1)}h`, { "text-anchor": "end", class: "lbl" });
+  table("t-daily", ["Date", "Active h", "Span", "Prompts", "Late prompts", "Sessions", "Max parallel", "Interrupts", "Failed tools", "Lines edited", "Nudges"],
+    D.daily.map((d) => d.no_data ? [`${d.weekday} ${d.date}`, "no data", "", "", "", "", "", "", "", "", ""] : [`${d.weekday} ${d.date}`, fmt(d.active_h, 1), d.span_start ? `${d.span_start}–${d.span_end}` : "–", d.prompts, d.late_prompts, d.sessions, d.max_parallel, d.interrupts, d.tool_errors, fmt(d.lines_edited), d.nudges]));
+})();
+
+// ---- 1b. Heatmap weekday x hour ---------------------------------------------
+(function () {
+  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const W = 1040, cell = 38, gap = 2, m = { t: 6, l: 40, b: 26 };
+  const H = m.t + 7 * cell + m.b;
+  const s = svg("c-heat", W, H);
+  const cw = (W - m.l - 8) / 24;
+  const max = Math.max(...D.heatmap.flat(), 1);
+  const step = (v) => (v === 0 ? 0 : Math.min(7, 1 + Math.floor((v / max) * 6.999)));
+  D.heatmap.forEach((row, wd) => {
+    text(s, m.l - 8, m.t + wd * cell + cell / 2 + 4, days[wd], { "text-anchor": "end" });
+    row.forEach((v, h) => {
+      const x = m.l + h * cw, yy = m.t + wd * cell;
+      const late = wd >= 5 || h < TH.work_start || h >= TH.work_end;
+      const r = el("rect", { x: x + gap / 2, y: yy + gap / 2, width: cw - gap, height: cell - gap, rx: 3,
+        fill: `var(--seq-${step(v)})` }, s);
+      if (late) { r.setAttribute("stroke", "var(--axis)"); r.setAttribute("stroke-width", 1); }
+      hover(r, `<b>${days[wd]} ${String(h).padStart(2, "0")}:00</b><br>${v} prompts${late ? '<br><span class="muted">outside working hours</span>' : ""}`);
+    });
+  });
+  for (let h = 0; h < 24; h += 3) text(s, m.l + h * cw + cw / 2, H - 8, String(h).padStart(2, "0"), { "text-anchor": "middle" });
+})();
+
+// ---- 2. Day timeline --------------------------------------------------------
+(function () {
+  const top = D.projects.slice(0, 3).map((p) => p[0]);
+  const colorOf = (p) => { const i = top.indexOf(p); return i >= 0 ? `var(--series-${i + 1})` : "var(--text-muted)"; };
+  legend("l-timeline", [...top.map((p, i) => [p, `--series-${i + 1}`]),
+    ...(D.projects.length > 3 ? [["Other projects", "--text-muted"]] : []),
+    ["Replayed nudge", "--critical"]]);
+  const days = D.daily.filter((d) => d.prompts && (d.source || "raw") === "raw").map((d) => d.date);
+  if (!days.length) return;
+  const segs = D.segments.map((g) => ({ ...g, s: new Date(g.start), e: new Date(g.end) }));
+  const hourOf = (dt) => dt.getHours() + dt.getMinutes() / 60;
+  let h0 = 24, h1 = 0;
+  segs.forEach((g) => { h0 = Math.min(h0, Math.floor(hourOf(g.s))); h1 = Math.max(h1, Math.ceil(hourOf(g.e))); });
+  h0 = Math.max(0, Math.min(h0, TH.work_start)); h1 = Math.min(24, Math.max(h1, TH.work_end));
+  const row = 18, m = { t: 8, r: 12, b: 26, l: 70 }, W = 1040, H = m.t + days.length * row + m.b;
+  const s = svg("c-timeline", W, H);
+  const x = (h) => m.l + (W - m.l - m.r) * (h - h0) / (h1 - h0);
+  // working-hours band
+  el("rect", { x: x(TH.work_start), y: m.t, width: x(TH.work_end) - x(TH.work_start), height: days.length * row, fill: "var(--series-1-wash)" }, s);
+  for (let h = h0; h <= h1; h++) {
+    el("line", { x1: x(h), x2: x(h), y1: m.t, y2: m.t + days.length * row, class: "grid" }, s);
+    if ((h - h0) % 2 === 0) text(s, x(h), H - 8, String(h).padStart(2, "0") + ":00", { "text-anchor": "middle" });
+  }
+  const rowOf = Object.fromEntries(days.map((d, i) => [d, i]));
+  const localDate = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+  days.forEach((d, i) => text(s, m.l - 8, m.t + i * row + row / 2 + 4, `${new Date(d + "T12:00").toLocaleDateString(undefined, { weekday: "short" })} ${shortDate(d)}`, { "text-anchor": "end" }));
+  segs.forEach((g) => {
+    const r = rowOf[localDate(g.s)];
+    if (r === undefined) return;
+    const xs = x(hourOf(g.s)), xe = Math.max(xs + 3, x(Math.min(h1, hourOf(g.e) + (localDate(g.e) !== localDate(g.s) ? 24 : 0))));
+    const rect = el("rect", { x: xs, y: m.t + r * row + 4, width: xe - xs, height: row - 8, rx: 3, fill: colorOf(g.project), "fill-opacity": 0.85 }, s);
+    const mins = Math.round((g.e - g.s) / 60000);
+    hover(rect, `<b>${esc(g.project)}</b><br>${hhmm(g.start)}–${hhmm(g.end)} · ${mins} min<br><span class="muted">session ${esc(g.session)}</span>`);
+  });
+  D.nudges.forEach((n) => {
+    const dt = new Date(n.ts), r = rowOf[localDate(dt)];
+    if (r === undefined) return;
+    const cx = x(hourOf(dt)), cy = m.t + r * row + row / 2;
+    const c = el("circle", { cx, cy, r: 5, fill: "var(--critical)", stroke: "var(--surface-1)", "stroke-width": 2 }, s);
+    hover(c, `<b>${n.kind} nudge</b> at ${hhmm(n.ts)}<br>stretch ${n.stretch_min} min${n.signals.length ? "<br>" + esc(n.signals.join(", ")) : ""}`);
+  });
+})();
+
+// ---- 2b. Stretch length histogram --------------------------------------------
+(function () {
+  const bins = [[5, 15], [15, 30], [30, 45], [45, 60], [60, 90], [90, 120], [120, 150], [150, 9999]];
+  const counts = bins.map(([a, b]) => D.stretches.filter((s) => s.minutes >= a && s.minutes < b).length);
+  const W = 520, H = 220, m = { t: 16, r: 8, b: 34, l: 36 };
+  const s = svg("c-stretch", W, H);
+  const max = niceMax(Math.max(...counts, 1));
+  const y = yAxis(s, m, W, H, max);
+  const band = (W - m.l - m.r) / bins.length, bw = Math.min(24, band - 4);
+  bins.forEach(([a, b], i) => {
+    const x = m.l + i * band + (band - bw) / 2;
+    const over = a >= TH.light;
+    el("path", { d: barPath(x, y(counts[i]), bw, y(0) - y(counts[i])), fill: over ? "var(--series-2)" : "var(--series-1)" }, s);
+    if (counts[i]) text(s, x + bw / 2, y(counts[i]) - 4, counts[i], { "text-anchor": "middle", class: "lbl" });
+    text(s, x + bw / 2, H - m.b + 16, b > 999 ? `${a}+ min` : `${a}–${b}`, { "text-anchor": "middle" });
+    const hit = el("rect", { x: m.l + i * band, y: m.t, width: band, height: H - m.t - m.b, class: "hit" }, s);
+    hover(hit, `<b>${b > 999 ? a + "+ min" : a + "–" + b + " min"}</b><br>${counts[i]} stretches${over ? '<br><span class="muted">at or past the light-nudge threshold</span>' : ""}`);
+  });
+})();
+
+// ---- 2c. Parallel sessions --------------------------------------------------
+(function () {
+  const dist = D.parallel_dist;
+  const total = dist.reduce((a, [, n]) => a + n, 0) || 1;
+  const W = 520, H = 220, m = { t: 16, r: 8, b: 34, l: 36 };
+  const s = svg("c-parallel", W, H);
+  const max = niceMax(Math.max(...dist.map(([, n]) => n), 1));
+  const y = yAxis(s, m, W, H, max);
+  const band = (W - m.l - m.r) / Math.max(dist.length, 4), bw = Math.min(24, band - 4);
+  dist.forEach(([k, n], i) => {
+    const x = m.l + i * band + (band - bw) / 2;
+    el("path", { d: barPath(x, y(n), bw, y(0) - y(n)), fill: k >= 3 ? "var(--series-2)" : "var(--series-1)" }, s);
+    text(s, x + bw / 2, y(n) - 4, `${fmt(n / total * 100)}%`, { "text-anchor": "middle", class: "lbl" });
+    text(s, x + bw / 2, H - m.b + 16, k === 1 ? "1 session" : `${k} sessions`, { "text-anchor": "middle" });
+    const hit = el("rect", { x: m.l + i * band, y: m.t, width: band, height: H - m.t - m.b, class: "hit" }, s);
+    hover(hit, `<b>${k} parallel</b><br>${n} prompts (${fmt(n / total * 100, 1)}%)`);
+  });
+})();
+
+// Small multi-line chart on one axis (same unit).
+function lines(id, xs, series, { W = 1040, H = 220, xLabel = (v) => v, unit = "", tipTitle = (i) => xs[i] } = {}) {
+  const m = { t: 14, r: 90, b: 34, l: 40 };
+  const s = svg(id, W, H);
+  const max = niceMax(Math.max(1, ...series.flatMap((sr) => sr.values.filter((v) => v != null))));
+  const y = yAxis(s, m, W, H, max);
+  const x = (i) => m.l + (W - m.l - m.r) * (xs.length === 1 ? 0.5 : i / (xs.length - 1));
+  xs.forEach((v, i) => { if (i % Math.ceil(xs.length / 12) === 0 || i === xs.length - 1) text(s, x(i), H - m.b + 16, xLabel(v), { "text-anchor": "middle" }); });
+  const ends = series.map((sr) => { let li = sr.values.length - 1; while (li > 0 && sr.values[li] == null) li--; return sr.values[li] == null ? null : y(sr.values[li]); });
+  const sorted = ends.filter((v) => v != null).sort((a, b) => a - b);
+  const labelEnds = sorted.every((v, i) => i === 0 || v - sorted[i - 1] >= 13);
+  series.forEach((sr) => {
+    let d = "", pen = false;
+    sr.values.forEach((v, i) => { if (v == null) { pen = false; return; } d += `${pen ? "L" : "M"}${x(i)},${y(v)}`; pen = true; });
+    el("path", { d, fill: "none", stroke: `var(${sr.color})`, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }, s);
+    let li = sr.values.length - 1; while (li > 0 && sr.values[li] == null) li--;
+    if (sr.values[li] != null) {
+      el("circle", { cx: x(li), cy: y(sr.values[li]), r: 4, fill: `var(${sr.color})`, stroke: "var(--surface-1)", "stroke-width": 2 }, s);
+      if (labelEnds) text(s, x(li) + 8, y(sr.values[li]) + 4, sr.label, { class: "lbl" });
+    }
+  });
+  const cross = el("line", { y1: m.t, y2: H - m.b, class: "axis", opacity: 0 }, s);
+  const step = (W - m.l - m.r) / Math.max(xs.length - 1, 1);
+  xs.forEach((_, i) => {
+    const hit = el("rect", { x: x(i) - step / 2, y: m.t, width: step, height: H - m.t - m.b, class: "hit" }, s);
+    hit.addEventListener("mouseenter", () => { cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("opacity", 1); });
+    hit.addEventListener("mouseleave", () => cross.setAttribute("opacity", 0));
+    hover(hit, `<b>${tipTitle(i)}</b>` + series.map((sr) => `<br><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(${sr.color});margin-right:6px"></i>${esc(sr.label)}: ${sr.values[i] == null ? "–" : fmt(sr.values[i], 1) + unit}`).join(""));
+  });
+}
+
+// ---- 3. Friction per day ------------------------------------------------------
+(function () {
+  const days = D.daily;
+  const per10 = (d, k) => (d.prompts >= 3 ? (d[k] / d.prompts) * 10 : null);
+  const series = [
+    { label: "Interruptions", color: "--series-1", values: days.map((d) => per10(d, "interrupts")) },
+    { label: "Short follow-ups", color: "--series-2", values: days.map((d) => per10(d, "short_followups")) },
+    { label: "Failed tools", color: "--series-3", values: days.map((d) => per10(d, "tool_errors")) },
+  ];
+  legend("l-friction", series.map((s) => [s.label, s.color, "line"]));
+  lines("c-friction", days.map((d) => d.date), series, { xLabel: shortDate, tipTitle: (i) => `${days[i].weekday} ${shortDate(days[i].date)} · ${days[i].prompts} prompts` });
+})();
+
+// ---- 3b. Friction by hour, prompt length by stretch position ----------------
+(function () {
+  const fh = D.friction_hour.filter((h) => h.prompts >= 5);
+  const W = 520, H = 220, m = { t: 16, r: 8, b: 34, l: 36 };
+  const s = svg("c-fhour", W, H);
+  const vals = fh.map((h) => ((h.interrupts + h.short_followups) / h.prompts) * 10);
+  const max = niceMax(Math.max(...vals, 1));
+  const y = yAxis(s, m, W, H, max);
+  const band = (W - m.l - m.r) / Math.max(fh.length, 1), bw = Math.min(24, band - 3);
+  fh.forEach((h, i) => {
+    const x = m.l + i * band + (band - bw) / 2;
+    const late = h.hour < TH.work_start || h.hour >= TH.work_end;
+    el("path", { d: barPath(x, y(vals[i]), bw, y(0) - y(vals[i])), fill: late ? "var(--series-2)" : "var(--series-1)" }, s);
+    text(s, x + bw / 2, H - m.b + 16, String(h.hour).padStart(2, "0"), { "text-anchor": "middle" });
+    const hit = el("rect", { x: m.l + i * band, y: m.t, width: band, height: H - m.t - m.b, class: "hit" }, s);
+    hover(hit, `<b>${String(h.hour).padStart(2, "0")}:00</b><br>${fmt(vals[i], 1)} per 10 prompts<br><span class="muted">${h.interrupts} interrupts · ${h.short_followups} short follow-ups · ${h.prompts} prompts</span>`);
+  });
+
+  const pl = D.prompt_len_by_pos;
+  const s2 = svg("c-plen", W, H);
+  const max2 = niceMax(Math.max(...pl.map((p) => p.median_chars), 1));
+  const y2 = yAxis(s2, m, W, H, max2);
+  const band2 = (W - m.l - m.r) / Math.max(pl.length, 1), bw2 = Math.min(24, band2 - 4);
+  pl.forEach((p, i) => {
+    const x = m.l + i * band2 + (band2 - bw2) / 2;
+    el("path", { d: barPath(x, y2(p.median_chars), bw2, y2(0) - y2(p.median_chars)), fill: "var(--series-1)" }, s2);
+    text(s2, x + bw2 / 2, y2(p.median_chars) - 4, p.median_chars, { "text-anchor": "middle", class: "lbl" });
+    text(s2, x + bw2 / 2, H - m.b + 16, p.bucket, { "text-anchor": "middle" });
+    const hit = el("rect", { x: m.l + i * band2, y: m.t, width: band2, height: H - m.t - m.b, class: "hit" }, s2);
+    hover(hit, `<b>${p.bucket} into a stretch</b><br>median ${p.median_chars} characters<br><span class="muted">${p.n} prompts${p.n < 20 ? " · small sample" : ""}</span>`);
+  });
+})();
+
+// ---- 4. Review load -----------------------------------------------------------
+(function () {
+  const W = 1040, H = 200, m = { t: 12, r: 12, b: 34, l: 48 };
+  const s = svg("c-lines", W, H);
+  const n = D.daily.length, band = (W - m.l - m.r) / n, bw = Math.min(24, band - 2);
+  const max = niceMax(Math.max(...D.daily.map((d) => d.lines_edited), 1));
+  const y = yAxis(s, m, W, H, max, (v) => (v >= 1000 ? fmt(v / 1000, v % 1000 ? 1 : 0) + "K" : fmt(v)));
+  D.daily.forEach((d, i) => {
+    const x = m.l + i * band + (band - bw) / 2;
+    if (d.lines_edited) el("path", { d: barPath(x, y(d.lines_edited), bw, y(0) - y(d.lines_edited)), fill: "var(--series-1)" }, s);
+    if (i % Math.ceil(n / 15) === 0 || i === n - 1) text(s, x + bw / 2, H - m.b + 16, shortDate(d.date), { "text-anchor": "middle" });
+    const hit = el("rect", { x: m.l + i * band, y: m.t, width: band, height: H - m.t - m.b, class: "hit" }, s);
+    hover(hit, `<b>${d.weekday} ${shortDate(d.date)}</b><br>${fmt(d.lines_edited)} lines written/edited<br><span class="muted">${d.subagents} subagents launched</span>`);
+  });
+})();
+
+// ---- 5. Nudges ------------------------------------------------------------------
+(function () {
+  const kinds = [["light", "--series-1"], ["step back", "--series-2"], ["firm", "--series-3"]];
+  legend("l-nudges", kinds.map(([k, c]) => [k[0].toUpperCase() + k.slice(1), c]));
+  const W = 520, H = 220, m = { t: 16, r: 8, b: 34, l: 36 };
+  const s = svg("c-nudges", W, H);
+  const byDay = D.daily.map((d) => Object.fromEntries(kinds.map(([k]) => [k, d.nudges_kind ? d.nudges_kind[k] || 0 : D.nudges.filter((n) => n.ts.slice(0, 10) === d.date && n.kind === k).length])));
+  const max = niceMax(Math.max(3, ...byDay.map((b) => kinds.reduce((a, [k]) => a + b[k], 0))));
+  const y = yAxis(s, m, W, H, max);
+  const n = D.daily.length, band = (W - m.l - m.r) / n, bw = Math.max(3, Math.min(24, band - 2));
+  D.daily.forEach((d, i) => {
+    const x = m.l + i * band + (band - bw) / 2;
+    let acc = 0;
+    const total = kinds.reduce((a, [k]) => a + byDay[i][k], 0);
+    kinds.forEach(([k, c], ki) => {
+      const v = byDay[i][k]; if (!v) return;
+      const y0 = y(acc), y1 = y(acc + v);
+      const isTop = kinds.slice(ki + 1).every(([k2]) => !byDay[i][k2]);
+      const gap = acc ? 2 : 0;
+      el("path", { d: isTop ? barPath(x, y1, bw, y0 - y1 - gap) : `M${x},${y1}H${x + bw}V${y0 - gap}H${x}Z`, fill: `var(${c})` }, s);
+      acc += v;
+    });
+    if (i % Math.ceil(n / 8) === 0 || i === n - 1) text(s, x + bw / 2, H - m.b + 16, shortDate(d.date), { "text-anchor": "middle" });
+    const hit = el("rect", { x: m.l + i * band, y: m.t, width: band, height: H - m.t - m.b, class: "hit" }, s);
+    hover(hit, `<b>${d.weekday} ${shortDate(d.date)}</b><br>${total} nudges` + kinds.filter(([k]) => byDay[i][k]).map(([k]) => `<br>${k}: ${byDay[i][k]}`).join(""));
+  });
+
+  const sens = D.sensitivity;
+  legend("l-sens", [["Any activity counts", "--series-1", "line"], ["Your prompts only (old watcher)", "--series-2", "line"]]);
+  lines("c-sens", sens.map((r) => r.light_min), [
+    { label: "Any activity", color: "--series-1", values: sens.map((r) => r.nudges) },
+    { label: "Prompts only", color: "--series-2", values: sens.map((r) => r.nudges_prompt_only) },
+  ], { W: 520, xLabel: (v) => v + " min", tipTitle: (i) => `Light nudge at ${sens[i].light_min} min` });
+
+  if (!D.nudges.length) { $("t-nudges").innerHTML = '<p class="note">No nudges would have fired.</p>'; return; }
+  table("t-nudges", ["When", "Kind", "Stretch (min)", "Signals"],
+    D.nudges.map((n) => [new Date(n.ts).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }), n.kind, n.stretch_min, n.signals.join(", ") || "time only"]));
+})();
+
+// ---- 6. Check-ins ---------------------------------------------------------------
+(function () {
+  const c = D.checkins;
+  if (!c.length) {
+    $("checkins").innerHTML = '<h3>No check-ins yet</h3><p class="note">Run <code>/battery</code> (or answer a battery check after a nudge) for a week or two. Ratings will appear here next to the signals from the hours before each one, which is the real test of whether the signals track how you feel.</p>';
+    return;
+  }
+  const bat = c.filter((x) => x.instrument === "samn-perelli");
+  const burn = c.filter((x) => x.instrument === "burnout");
+  $("checkins").innerHTML = `<h3>Self-reported check-ins</h3><p class="sub">${bat.length} battery ratings (1 fully alert … 7 completely exhausted) · ${burn.length} burnout answers</p><div class="tablewrap" id="t-checkins"></div>`;
+  table("t-checkins", ["When", "Instrument", "Answer"], c.map((x) => [new Date(x.ts).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }), x.instrument, x.value]));
+})();
+
+})();
+
+</script>
+</body>
+</html>
