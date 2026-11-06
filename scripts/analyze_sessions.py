@@ -30,7 +30,7 @@ NUDGE_LIGHT_MIN = 90      # stretch length for a light nudge
 NUDGE_FIRM_MIN = 150      # stretch length for a firm nudge
 COOLDOWN_MIN = 45         # minimum time between nudges
 PARALLEL_WINDOW_MIN = 15  # sessions active within this window count as parallel
-WORK_START, WORK_END = 9, 19  # working hours (local), late = outside
+WORK_START, WORK_END = 9, 18  # weekday working hours (local); weekends are always late
 SHORT_PROMPT_CHARS = 40   # short follow-up prompt, proxy for corrections
 RETRY_WINDOW_MIN = 15     # window for counting retry-loop evidence
 RETRY_MIN_EVENTS = 3      # interrupts + short follow-ups in window => retry loop

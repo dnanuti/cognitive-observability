@@ -50,7 +50,7 @@ Three pieces, all native to Claude Code:
 
 | # | Component | Where it lives | Job |
 |---|---|---|---|
-| 1 | **Mindful-work instructions** | A short block in user-level `~/.claude/CLAUDE.md` (always loaded) | Tells Claude what to watch for, when to speak up and how |
+| 1 | **Mindful-work instructions** | A short block in user-level `~/.claude/CLAUDE.md` (always loaded); a repo opts out with `mindful-work: off` in its own `CLAUDE.md` | Tells Claude what to watch for, when to speak up and how |
 | 2 | **Timing hook** | `hooks/mindful-time.sh` on `UserPromptSubmit`, `PostToolUse` and `Stop` | Records activity from both sides and adds local time, current stretch and idle time to each prompt. A break means 10+ min with no activity from you *or* Claude, across sessions; prompt gaps alone would count Claude's long-running work as a break (found by the history replay: longest stretch 68 min by prompt gaps vs 139 min counting both sides) |
 | 3 | **`/observe` skill** (exists; evolved) | `.claude/skills/observe/` | On-demand deeper reflection, weekly trends from git history plus saved snapshots |
 | 4 | **`/battery` skill** (new, tiny) | `.claude/skills/battery/` | Asks the in-session self-report questions in section 6 and saves the answer |
@@ -70,18 +70,18 @@ Three pieces, all native to Claude Code:
 | **Yak shaving** | Work has drifted 2+ steps away from the original goal | Name the original goal and offer to park the side quest |
 | **Frustration** | Wording like "nothing works", "why is this still broken", self-blame | Only counts alongside another signal |
 | **Review load** | Claude has produced a lot of code or diff for you to check this stretch | Raises urgency of a time nudge; never a trigger on its own |
-| **Late hours** | Timestamp outside working hours (default 09:00–19:00, configurable in the CLAUDE.md block) | One quiet mention per evening |
+| **Late hours** | Timestamp outside working hours: weekdays 09:00–18:00 by default (configurable in the CLAUDE.md block); weekends count as outside hours all day | One quiet mention per day |
 
 **Corroboration:** one signal alone (other than time) never triggers a nudge. Time, or two signals together, does.
 
 ### 4.2 How Claude speaks up
 
 - **One line, at the end of a reply**, after the actual work is done. Never instead of the work, never mid-task, never while you're responding to an incident.
-- **Plain facts, then a suggestion.** Example: *"~1h50 without a break and we've retried this fix 4 times. A 10-minute break might help; want me to note where we are first?"*
+- **Facts, then a suggestion, in a warm voice.** Example: *"We've been at this ~1h50 and this fix is fighting back (4 tries). Good moment for a 10-minute break? I can note where we are first."* Warm, not cheerful: no exclamation marks, no praise, no wellness talk.
 - **Offer a "where we are" note** before a break: what we tried, current state, first step on return (reusing `/observe`'s State Summary section). This removes the fear of losing context, a common reason to skip breaks.
 - **Battery check attached to the nudge:** the nudge may end with an optional one-keystroke check (section 6.1), e.g. *"…A 10-minute break might help. Battery check, 1–7? (or skip)"*. It only appears when a nudge already fires, so it adds no extra interruptions.
 - **Longer break after long stretches:** past ~150 min, suggest 15–20 minutes rather than 10, per the meta-analysis.
-- **Late hours:** suggest a stopping point and offer the "where we are" note. Don't comment on the hour itself.
+- **Late hours:** suggest a stopping point and offer the "where we are" note. Don't comment on the hour or the day itself.
 
 ### 4.3 Restraint rules (as important as the signals)
 
@@ -124,7 +124,7 @@ Your own rating beats anything Claude can infer. The questions below come from p
 |---|---|---|
 | In session: `/battery`, or attached to a nudge | Samn-Perelli fatigue scale | How tired you are **right now** |
 | Optional follow-up after a low rating | Two NASA-TLX items | **What** drained you: mental demand vs. frustration |
-| Weekly or fortnightly, in `/observe 7d` | Single-item burnout measure (Dolan et al. 2015) | The **longer-term** trend, not today's energy |
+| Weekly, in `/observe 7d` | Single-item burnout measure (Dolan et al. 2015) | The **longer-term** trend, not today's energy |
 
 ### 6.1 In-session: Samn-Perelli fatigue scale
 
@@ -219,20 +219,20 @@ Asked at most once a week, and only during `/observe 7d` (or a longer timeframe)
 ## 9. Non-goals
 
 - No external apps, background daemons, wearables or OS idle detection.
-- No event logs or new data stores beyond the existing snapshots and the single `checkins.md` file (section 6.4).
+- No event logs or new data stores beyond the existing snapshots, the single `checkins.md` file (section 6.4), the hook's two activity timestamps, and the numbers-only `daily.jsonl` summary (no text).
 - No diagnosis or "fatigue score" presented as fact.
 - No team or manager visibility. Personal and local only.
 - No storing prompt text in snapshots; summaries only.
 
 ---
 
-## 10. Open questions
+## 10. Decisions (resolved 2026-11-06)
 
-1. **Scope of install:** user-level (every repo, every session) or project-level only?
-2. **Working hours:** is 09:00–19:00 a reasonable default, and should weekends count as "late"?
-3. **Tone:** neutral and factual (as drafted) or a bit warmer?
-4. **Timestamp hook:** acceptable as "no extra tools"? Without it, Claude can't judge session length and only the content-based signals (retry loops, drift, frustration) remain.
-5. **Burnout item cadence:** weekly, or every two weeks so it doesn't become routine box-ticking?
+1. **Scope of install:** user-level by default (stretch time already counts all sessions), with per-repo opt-out via `mindful-work: off` in the repo's `CLAUDE.md`.
+2. **Working hours:** weekdays 09:00–18:00; weekends count as outside working hours all day. Still at most one stopping-point suggestion per day.
+3. **Tone:** a bit warmer than purely factual, while keeping the restraint rules (no praise, no moralizing, no wellness advice).
+4. **Timestamp hook:** acceptable. Claude Code hooks are a built-in feature, not an extra app or daemon; the hook is POSIX `sh` + `date`.
+5. **Burnout item cadence:** weekly, in `/observe 7d`.
 
 ---
 

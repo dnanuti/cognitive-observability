@@ -19,7 +19,7 @@ Open Claude Code in this repo. `CLAUDE.md`, the hook and both skills load automa
 
 ## Use it everywhere
 
-Install user-level so it applies to every project:
+Install user-level so it applies to every project (the recommended setup). To turn the watcher off in one repo, add a line `mindful-work: off` to that repo's `CLAUDE.md`; `/battery` still works there.
 
 1. **Skills:** copy both skill folders.
    ```bash
