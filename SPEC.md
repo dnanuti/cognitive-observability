@@ -210,7 +210,7 @@ Asked at most once a week, and only during `/observe 7d` (or a longer timeframe)
 | **3** | Weekly `/observe 7d` with snapshot trends, the NASA-TLX follow-up (6.2) and the weekly burnout item (6.3) | Two weeks of use produce a trend summary that sets your ratings next to the observed signals |
 | **4 (optional)** | Package all three pieces as one Claude Code plugin for one-step install | Someone else can install it without editing files by hand |
 
-**History replay (implemented):** `scripts/analyze_sessions.py` replays the nudge rules over the last ~30 days of local session logs and charts the results, so thresholds can be checked against real work before relying on them.
+**History replay (implemented):** `scripts/analyze_sessions.py` replays the nudge rules over local session logs and charts the results, so thresholds can be checked against real work before relying on them. A numbers-only daily history (`~/.claude/mindful-work/daily.jsonl`, written once a day) keeps trends beyond transcript retention.
 
 **Testing approach:** replay or role-play sessions (smooth, grinding, late-night, frustrated) and check that Claude nudges in the right ones, stays quiet in the others and never nudges twice within the cool-down.
 

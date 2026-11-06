@@ -5,10 +5,17 @@ Reads ~/.claude/projects/**/*.jsonl (stdlib only, nothing leaves the machine)
 and writes a self-contained HTML report. Prompt text is read only to compute
 counts (length, frustration-word hits) and is never written to the output.
 
+Daily history: --save-daily stores one numbers-only line per finished day in
+~/.claude/mindful-work/daily.jsonl, so trends survive after Claude Code prunes
+old transcripts (cleanupPeriodDays). Reports for longer --days windows fill
+days without raw logs from that file; days in neither show as "no data".
+
 Usage:
   python3 -I scripts/analyze_sessions.py [--days 30] [--out report.html]
         [--projects-dir ~/.claude/projects] [--json data.json]
+        [--save-daily] [--no-report] [--history PATH]
 """
+import os
 import argparse
 import json
 import re
@@ -271,12 +278,73 @@ def load_checkins(projects_dir, since):
     return sorted(out, key=lambda c: c["ts"])
 
 
+# ---- Daily history (numbers only, survives transcript cleanup) ---------------
+HISTORY_VERSION = 1
+NUDGE_KINDS = ("light", "firm", "step back")
+
+
+def default_history_path():
+    base = os.environ.get("MINDFUL_STATE_DIR") or "~/.claude/mindful-work"
+    return Path(base).expanduser() / "daily.jsonl"
+
+
+def load_history(path):
+    """Return {date_iso: record}. Bad lines are skipped."""
+    out = {}
+    try:
+        lines = Path(path).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return out
+    for line in lines:
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(rec, dict) and isinstance(rec.get("date"), str):
+            out[rec["date"]] = rec
+    return out
+
+
+def save_history(path, daily, raw_start):
+    """Upsert finished days into the history file. Returns days written.
+
+    Today is skipped (unfinished), as are days before the oldest raw log.
+    A stored day is never replaced by one with fewer prompts, so a day whose
+    transcripts were partly pruned can't overwrite a complete record.
+    """
+    today = datetime.now().astimezone().date().isoformat()
+    hist = load_history(path)
+    written = 0
+    for d in daily:
+        if d["source"] != "raw" or d["date"] >= today or d["date"] < raw_start:
+            continue
+        old = hist.get(d["date"])
+        if old and old.get("prompts", 0) > d["prompts"]:
+            continue
+        rec = {k: v for k, v in d.items() if k not in ("source", "no_data")}
+        rec["v"] = HISTORY_VERSION
+        rec["thresholds"] = {"break_gap": BREAK_GAP_MIN, "light": NUDGE_LIGHT_MIN,
+                             "firm": NUDGE_FIRM_MIN, "cooldown": COOLDOWN_MIN,
+                             "work_start": WORK_START, "work_end": WORK_END}
+        if rec != old:
+            hist[d["date"]] = rec
+            written += 1
+    if written:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text("".join(json.dumps(hist[k], separators=(",", ":")) + "\n"
+                               for k in sorted(hist)), encoding="utf-8")
+        tmp.replace(path)
+    return written
+
+
 def median(xs):
     xs = sorted(xs)
     return xs[len(xs) // 2] if xs else 0
 
 
-def summarize(events, subagent_calls, checkins, days, since):
+def summarize(events, subagent_calls, checkins, days, since, history=None):
     mark_short_followups(events)
     acts = [e for e in events if e["kind"] in ("prompt", "interrupt")]
     prompts = [e for e in acts if e["kind"] == "prompt"]
@@ -296,12 +364,33 @@ def summarize(events, subagent_calls, checkins, days, since):
     # Per-day aggregates
     today = datetime.now().astimezone().date()
     day_list = [today - timedelta(days=i) for i in range(days - 1, -1, -1)]
+    raw_start = events[0]["ts"].date() if events else today
+    history = history or {}
+    stretch_by_day = defaultdict(list)
+    for st in stretches:
+        stretch_by_day[st[0]["ts"].date()].append(round(minutes(st[0]["ts"], st[-1]["ts"])))
     by_day = {d: [] for d in day_list}
     for e in events:
         if e["ts"].date() in by_day:
             by_day[e["ts"].date()].append(e)
     daily = []
     for d in day_list:
+        if d < raw_start:
+            rec = history.get(d.isoformat())
+            if rec:
+                daily.append({**{k: v for k, v in rec.items() if k not in ("v", "thresholds")},
+                              "source": "history", "no_data": False})
+            else:
+                daily.append({"date": d.isoformat(), "weekday": d.strftime("%a"),
+                              "source": "none", "no_data": True, "active_h": 0,
+                              "span_start": None, "span_end": None, "prompts": 0,
+                              "late_prompts": 0, "interrupts": 0, "tool_errors": 0,
+                              "short_followups": 0, "frustration": 0, "lines_edited": 0,
+                              "subagents": 0, "sessions": 0, "max_parallel": 0,
+                              "nudges": 0, "nudges_firm": 0,
+                              "nudges_kind": {k: 0 for k in NUDGE_KINDS},
+                              "stretch_min": [], "prompts_by_hour": [0] * 24})
+            continue
         ev = by_day[d]
         da = [e for e in ev if e["kind"] in ENGAGED]
         dp = [e for e in da if e["kind"] == "prompt"]
@@ -324,12 +413,21 @@ def summarize(events, subagent_calls, checkins, days, since):
             "max_parallel": max((e.get("parallel", 0) for e in dp), default=0),
             "nudges": len(dn),
             "nudges_firm": sum(1 for n in dn if n["kind"] == "firm"),
+            "nudges_kind": {k: sum(1 for n in dn if n["kind"] == k) for k in NUDGE_KINDS},
+            "stretch_min": stretch_by_day.get(d, []),
+            "prompts_by_hour": [sum(1 for e in dp if e["ts"].hour == h) for h in range(24)],
+            "source": "raw", "no_data": False,
         })
 
     # Heatmap weekday x hour (prompts)
     heat = [[0] * 24 for _ in range(7)]
     for e in prompts:
         heat[e["ts"].weekday()][e["ts"].hour] += 1
+    for d in daily:
+        if d["source"] == "history":
+            wd = datetime.fromisoformat(d["date"]).weekday()
+            for h, c in enumerate(d.get("prompts_by_hour") or []):
+                heat[wd][h] += c
 
     # Friction by hour of day
     by_hour = defaultdict(lambda: {"prompts": 0, "interrupts": 0, "tool_errors": 0,
@@ -392,28 +490,36 @@ def summarize(events, subagent_calls, checkins, days, since):
 
     parallel_dist = Counter(e["parallel"] for e in prompts)
     projects = Counter(e["project"] for e in prompts)
-    lengths = sorted(r["minutes"] for r in stretch_rows)
+    hist_stretches = [{"minutes": m} for d in daily if d["source"] == "history"
+                      for m in d.get("stretch_min") or []]
+    lengths = sorted(r["minutes"] for r in stretch_rows + hist_stretches)
+    with_data = [d for d in daily if not d["no_data"]]
+    total_prompts = sum(d["prompts"] for d in with_data)
 
     return {
         "generated": datetime.now().astimezone().isoformat(timespec="minutes"),
         "since": since.date().isoformat(),
         "days": days,
+        "coverage": {"raw_from": raw_start.isoformat(),
+                     "raw_days": sum(1 for d in daily if d["source"] == "raw"),
+                     "history_days": sum(1 for d in daily if d["source"] == "history"),
+                     "no_data_days": sum(1 for d in daily if d["no_data"])},
         "thresholds": {"break_gap": BREAK_GAP_MIN, "light": NUDGE_LIGHT_MIN,
                        "firm": NUDGE_FIRM_MIN, "cooldown": COOLDOWN_MIN,
                        "work_start": WORK_START, "work_end": WORK_END},
         "totals": {
-            "prompts": len(prompts),
+            "prompts": total_prompts,
             "sessions": len({e["session"] for e in acts}),
-            "active_days": sum(1 for d in daily if d["prompts"]),
-            "zero_days": sum(1 for d in daily if not d["prompts"]),
+            "active_days": sum(1 for d in with_data if d["prompts"]),
+            "zero_days": sum(1 for d in with_data if not d["prompts"]),
             "active_h": round(sum(d["active_h"] for d in daily), 1),
-            "late_share": round(sum(d["late_prompts"] for d in daily) / max(len(prompts), 1), 3),
+            "late_share": round(sum(d["late_prompts"] for d in daily) / max(total_prompts, 1), 3),
             "interrupts": sum(d["interrupts"] for d in daily),
             "tool_errors": sum(d["tool_errors"] for d in daily),
             "lines_edited": sum(d["lines_edited"] for d in daily),
             "subagent_turns": sum(subagent_calls.values()),
             "compactions": sum(1 for e in events if e["kind"] == "compact"),
-            "nudges": len(nudges),
+            "nudges": sum(d["nudges"] for d in daily),
             "stretches_over_light": sum(1 for x in lengths if x >= NUDGE_LIGHT_MIN),
             "stretches_over_firm": sum(1 for x in lengths if x >= NUDGE_FIRM_MIN),
             "longest_stretch": lengths[-1] if lengths else 0,
@@ -424,7 +530,7 @@ def summarize(events, subagent_calls, checkins, days, since):
         "daily": daily,
         "heatmap": heat,
         "friction_hour": friction_hour,
-        "stretches": stretch_rows,
+        "stretches": stretch_rows + hist_stretches,
         "prompt_len_by_pos": prompt_len_by_pos,
         "segments": segments,
         "nudges": [{**n, "ts": n["ts"].isoformat()} for n in nudges],
@@ -441,13 +547,30 @@ def main():
     ap.add_argument("--projects-dir", default="~/.claude/projects")
     ap.add_argument("--out", default="session-report.html")
     ap.add_argument("--json", help="also write the aggregated data as JSON")
+    ap.add_argument("--history", default=str(default_history_path()),
+                    help="daily history file (default ~/.claude/mindful-work/daily.jsonl)")
+    ap.add_argument("--save-daily", action="store_true",
+                    help="store finished days from raw logs in the history file")
+    ap.add_argument("--no-report", action="store_true", help="skip writing the HTML report")
     args = ap.parse_args()
     since = datetime.now().astimezone().replace(hour=0, minute=0, second=0,
                                                 microsecond=0) - timedelta(days=args.days - 1)
     events, subs = load(args.projects_dir, since)
-    if not events:
+    history = load_history(args.history)
+    if not events and not any(k >= since.date().isoformat() for k in history):
         sys.exit(f"No session activity found in {args.projects_dir} since {since.date()}")
-    data = summarize(events, subs, load_checkins(args.projects_dir, since), args.days, since)
+    data = summarize(events, subs, load_checkins(args.projects_dir, since), args.days, since,
+                     history)
+    if args.save_daily:
+        # If the oldest raw day isn't the window start, its transcripts may be
+        # partly pruned already, so don't store it.
+        raw_from = data["coverage"]["raw_from"]
+        if raw_from > since.date().isoformat():
+            raw_from = (datetime.fromisoformat(raw_from) + timedelta(days=1)).date().isoformat()
+        n = save_history(args.history, data["daily"], raw_from)
+        print(f"{args.history}: {n} day(s) saved")
+    if args.no_report:
+        return
     if args.json:
         Path(args.json).write_text(json.dumps(data, indent=1))
     here = Path(__file__).parent

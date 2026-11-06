@@ -82,8 +82,10 @@ function yAxis(s, m, W, H, max, fmtTick = (v) => fmt(v)) {
 
 // ---- Header, tiles, findings ------------------------------------------------
 const T = D.totals, TH = D.thresholds;
-$("subtitle").textContent = `Last ${D.days} days (since ${shortDate(D.since)}) · generated ${D.generated.replace("T", " ")}`;
-$("footer").textContent = `Thresholds: break ≥ ${TH.break_gap} min · light nudge ${TH.light} min · firm ${TH.firm} min · cool-down ${TH.cooldown} min · working hours ${TH.work_start}:00–${TH.work_end}:00 weekdays. Claude Code keeps about 30 days of history by default (cleanupPeriodDays).`;
+const C = D.coverage || { history_days: 0, no_data_days: 0 };
+const cov = [C.history_days ? `${C.history_days} days from daily history` : "", C.no_data_days ? `${C.no_data_days} days with no data` : ""].filter(Boolean).join(" · ");
+$("subtitle").textContent = `Last ${D.days} days (since ${shortDate(D.since)})${cov ? " · " + cov : ""} · generated ${D.generated.replace("T", " ")}`;
+$("footer").textContent = `Thresholds: break ≥ ${TH.break_gap} min · light nudge ${TH.light} min · firm ${TH.firm} min · cool-down ${TH.cooldown} min · working hours ${TH.work_start}:00–${TH.work_end}:00 weekdays. Raw logs last as long as cleanupPeriodDays (30 by default); older days come from the numbers-only daily history (--save-daily). Timeline, friction-by-hour, prompt-length and sensitivity charts use raw logs only.`;
 const tiles = [
   ["Active hours", fmt(T.active_h, 1), `${T.active_days} active days`],
   ["Days with no activity", T.zero_days, "rough recovery days"],
@@ -115,23 +117,24 @@ $("findings").innerHTML = findings.map((f) => `<li>${esc(f)}</li>`).join("");
   const max = niceMax(Math.max(...D.daily.map((d) => d.active_h), 1));
   const y = yAxis(s, m, W, H, max, (v) => v + "h");
   const avg = D.daily.map((d, i) => {
-    const w = D.daily.slice(Math.max(0, i - 6), i + 1);
-    return w.reduce((a, b) => a + b.active_h, 0) / w.length;
+    const w = D.daily.slice(Math.max(0, i - 6), i + 1).filter((x) => !x.no_data);
+    return w.length ? w.reduce((a, b) => a + b.active_h, 0) / w.length : null;
   });
   D.daily.forEach((d, i) => {
     const x = m.l + i * band + (band - bw) / 2;
-    if (d.active_h) el("path", { d: barPath(x, y(d.active_h), bw, y(0) - y(d.active_h)), fill: "var(--series-1)" }, s);
+    if (d.no_data) el("rect", { x, y: y(0) - 3, width: bw, height: 3, rx: 1.5, fill: "none", stroke: "var(--grid)", "stroke-dasharray": "2 2" }, s);
+    else if (d.active_h) el("path", { d: barPath(x, y(d.active_h), bw, y(0) - y(d.active_h)), fill: "var(--series-1)" }, s);
     else el("rect", { x, y: y(0) - 3, width: bw, height: 3, rx: 1.5, fill: "var(--grid)" }, s);
     if (i % Math.ceil(n / 15) === 0 || i === n - 1) text(s, x + bw / 2, H - m.b + 16, shortDate(d.date), { "text-anchor": "middle" });
     const hit = el("rect", { x: m.l + i * band, y: m.t, width: band, height: H - m.t - m.b, class: "hit" }, s);
-    hover(hit, `<b>${d.weekday} ${shortDate(d.date)}</b><br>${d.active_h ? `${fmt(d.active_h, 1)} active hours<br><span class="muted">${d.span_start}–${d.span_end} · ${d.prompts} prompts · ${d.sessions} sessions</span>` : "No activity"}<br><span class="muted">7-day avg ${fmt(avg[i], 1)}h</span>`);
+    hover(hit, `<b>${d.weekday} ${shortDate(d.date)}</b><br>${d.active_h ? `${fmt(d.active_h, 1)} active hours<br><span class="muted">${d.span_start}–${d.span_end} · ${d.prompts} prompts · ${d.sessions} sessions</span>` : d.no_data ? "No data (before raw logs and daily history)" : "No activity"}<br><span class="muted">7-day avg ${avg[i] == null ? "–" : fmt(avg[i], 1) + "h"}</span>`);
   });
-  const pts = avg.map((v, i) => `${m.l + i * band + band / 2},${y(v)}`).join(" ");
+  const pts = avg.map((v, i) => v == null ? null : `${m.l + i * band + band / 2},${y(v)}`).filter(Boolean).join(" ");
   el("polyline", { points: pts, fill: "none", stroke: "var(--text-secondary)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", "pointer-events": "none" }, s);
   const last = avg.length - 1;
-  text(s, W - m.r, m.t + 4, `7-day avg now ${fmt(avg[last], 1)}h`, { "text-anchor": "end", class: "lbl" });
+  text(s, W - m.r, m.t + 4, `7-day avg now ${fmt(avg[last] || 0, 1)}h`, { "text-anchor": "end", class: "lbl" });
   table("t-daily", ["Date", "Active h", "Span", "Prompts", "Late prompts", "Sessions", "Max parallel", "Interrupts", "Failed tools", "Lines edited", "Nudges"],
-    D.daily.map((d) => [`${d.weekday} ${d.date}`, fmt(d.active_h, 1), d.span_start ? `${d.span_start}–${d.span_end}` : "–", d.prompts, d.late_prompts, d.sessions, d.max_parallel, d.interrupts, d.tool_errors, fmt(d.lines_edited), d.nudges]));
+    D.daily.map((d) => d.no_data ? [`${d.weekday} ${d.date}`, "no data", "", "", "", "", "", "", "", "", ""] : [`${d.weekday} ${d.date}`, fmt(d.active_h, 1), d.span_start ? `${d.span_start}–${d.span_end}` : "–", d.prompts, d.late_prompts, d.sessions, d.max_parallel, d.interrupts, d.tool_errors, fmt(d.lines_edited), d.nudges]));
 })();
 
 // ---- 1b. Heatmap weekday x hour ---------------------------------------------
@@ -164,7 +167,7 @@ $("findings").innerHTML = findings.map((f) => `<li>${esc(f)}</li>`).join("");
   legend("l-timeline", [...top.map((p, i) => [p, `--series-${i + 1}`]),
     ...(D.projects.length > 3 ? [["Other projects", "--text-muted"]] : []),
     ["Replayed nudge", "--critical"]]);
-  const days = D.daily.filter((d) => d.prompts).map((d) => d.date);
+  const days = D.daily.filter((d) => d.prompts && (d.source || "raw") === "raw").map((d) => d.date);
   if (!days.length) return;
   const segs = D.segments.map((g) => ({ ...g, s: new Date(g.start), e: new Date(g.end) }));
   const hourOf = (dt) => dt.getHours() + dt.getMinutes() / 60;
@@ -338,7 +341,7 @@ function lines(id, xs, series, { W = 1040, H = 220, xLabel = (v) => v, unit = ""
   legend("l-nudges", kinds.map(([k, c]) => [k[0].toUpperCase() + k.slice(1), c]));
   const W = 520, H = 220, m = { t: 16, r: 8, b: 34, l: 36 };
   const s = svg("c-nudges", W, H);
-  const byDay = D.daily.map((d) => Object.fromEntries(kinds.map(([k]) => [k, D.nudges.filter((n) => n.ts.slice(0, 10) === d.date && n.kind === k).length])));
+  const byDay = D.daily.map((d) => Object.fromEntries(kinds.map(([k]) => [k, d.nudges_kind ? d.nudges_kind[k] || 0 : D.nudges.filter((n) => n.ts.slice(0, 10) === d.date && n.kind === k).length])));
   const max = niceMax(Math.max(3, ...byDay.map((b) => kinds.reduce((a, [k]) => a + b[k], 0))));
   const y = yAxis(s, m, W, H, max);
   const n = D.daily.length, band = (W - m.l - m.r) / n, bw = Math.max(3, Math.min(24, band - 2));

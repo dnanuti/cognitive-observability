@@ -10,7 +10,9 @@
 # Claude working for a long time no longer looks like a break.
 #
 # State: two epoch-second files in $MINDFUL_STATE_DIR (default
-# ~/.claude/mindful-work). No prompt text is read or stored.
+# ~/.claude/mindful-work), plus daily.jsonl written once a day by
+# scripts/analyze_sessions.py --save-daily (counts only). No prompt text is
+# stored.
 # MINDFUL_NOW overrides the clock for testing.
 
 [ -t 0 ] || cat >/dev/null   # drain the hook's JSON input; we don't need it
@@ -48,6 +50,17 @@ else
 fi
 write_num "$dir/stretch_start" "$start"
 write_num "$dir/last_activity" "$now"
+
+# Once a day, save yesterday's numbers-only summary in the background so
+# trends outlive transcript cleanup. Set MINDFUL_DAILY=0 to turn off.
+today=$(date '+%Y-%m-%d')
+if [ "${MINDFUL_DAILY:-1}" != 0 ] && [ "$(cat "$dir/daily_saved" 2>/dev/null)" != "$today" ]; then
+  script="$(dirname "$0")/../scripts/analyze_sessions.py"
+  if [ -f "$script" ] && command -v python3 >/dev/null 2>&1; then
+    printf '%s\n' "$today" > "$dir/daily_saved"
+    ( python3 -I "$script" --days 3 --save-daily --no-report >/dev/null 2>"$dir/daily.err" & ) 2>/dev/null
+  fi
+fi
 
 stamp=$(date -r "$now" '+%Y-%m-%d %H:%M %Z (%a)' 2>/dev/null \
      || date -d "@$now" '+%Y-%m-%d %H:%M %Z (%a)' 2>/dev/null \

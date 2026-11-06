@@ -48,7 +48,16 @@ python3 -I scripts/analyze_sessions.py --days 30 --out session-report.html
 open session-report.html
 ```
 
-Claude Code keeps about 30 days of history by default (`cleanupPeriodDays` in settings). The thresholds at the top of the script mirror `instructions/mindful-work.md`; change both together.
+Claude Code deletes transcripts after `cleanupPeriodDays` (30 by default). To keep long-range trends without keeping transcripts, the prompt hook runs `analyze_sessions.py --save-daily` once a day in the background. It saves one line per finished day to `~/.claude/mindful-work/daily.jsonl`, holding only counts: active hours, prompts, late prompts, stretch lengths, friction counts, replayed nudges, and prompts per hour. No text is saved. Reports with a longer `--days` window fill in older days from that file and show days in neither source as "no data", not "no activity". Set `MINDFUL_DAILY=0` to turn this off, or run it by hand:
+
+```bash
+python3 -I scripts/analyze_sessions.py --days 30 --save-daily --no-report   # backfill from current logs
+python3 -I scripts/analyze_sessions.py --days 180 --out session-report.html # long view
+```
+
+The day timeline, friction-by-hour, prompt-length and threshold-sensitivity charts need raw logs, so they only cover the days still on disk. Each saved day records the thresholds that were in force. Stretch minutes are stored raw so stretch counts can be recomputed if thresholds change, but saved nudge counts can't be.
+
+The thresholds at the top of the script mirror `instructions/mindful-work.md`; change both together.
 
 ## Commands
 
