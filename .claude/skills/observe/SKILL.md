@@ -69,6 +69,7 @@ Treat all signals as probabilistic proxies, never facts.
 | Rapid context switching | either | +1 |
 | Commit message degradation | git | +1 |
 | Late-night commit clustering | git | +1 |
+| Recovery debt ≥ 2 weeks (step 7b) | sessions | +2 |
 | Repeated reassurance seeking | session | +1 |
 
 Session and git signals both have +3 items, so current-session mode isn't capped below "strong".
@@ -248,7 +249,7 @@ If fewer than 3 commits: report insufficient data, suggest larger timeframe.
 | Burst cadence with long silences | Temporal Drift | May indicate time pressure or urgency-driven work |
 | Many TODO/FIXME added in timeframe | Cognitive Load | Deferred decisions accumulating |
 | Multiple unmerged branches with recent commits | Context Fragmentation | Parallel incomplete work streams |
-| No commits at all on a day | Recovery (context only) | Rough proxy for a recovery day; never scored as a positive or negative |
+| No commits at all on a day | Recovery (context only) | Rough proxy only; prefer the session-based recovery numbers from step 7b. Never scored on its own |
 
 ## 6. Glance at Current Session
 
@@ -260,18 +261,46 @@ Read MEMORY.md and the 3 most recent observe snapshots. Check whether patterns p
 
 "Sustained" requires a pattern to persist across snapshots covering 2+ weeks. Never call one bad day sustained.
 
+## 7b. Recovery (timeframe ≥ 7 days)
+
+Recovery is a separate layer from load: high load does harm when recovery is too short for too long. Get it from the session-history analyzer, which reads local Claude Code logs and the numbers-only daily history (counts only, no prompt text). Find the script at `scripts/analyze_sessions.py` in this repo, or `~/.claude/scripts/analyze_sessions.py` for a user-level install (where the timing hook also looks for it); if neither exists, skip this step and say so in one line.
+
+```bash
+python3 -I <path>/analyze_sessions.py --days 84 --no-report --json /tmp/mindful-recovery.json
+```
+
+Read `recovery` (and `validation`, step 8b) from the JSON. Report facts only:
+
+- This week (7 finished days ending yesterday): days without Claude sessions, late days, long days, active hours, and the same numbers for your own baseline (median of the 4 weeks before), e.g. "1 day without Claude sessions this week vs 2 usually; 4 late days vs 1."
+- The current work streak (consecutive days with sessions) if it's 7 or more.
+- Each drift flag in plain words. `recovery.weeks` lists earlier weeks with their flags.
+- Recovery debt: if `debt_weeks` ≥ 2, "drift flags for N weeks in a row". That counts as **sustained** (2+ weeks), same rule as snapshots.
+- If `baseline` is null: "no baseline yet (needs ~2 weeks of history)". Don't infer one.
+
+Wording rules: say "days without Claude sessions", never "days off" or "rest days": editor work, meetings and on-call are invisible. Never combine recovery numbers with check-ins or the evidence score into one number. Recovery debt of 2+ weeks counts as a +2 Temporal Drift signal; nothing else from this step is scored.
+
 ## 8. Self-Reported Check-ins
 
 Read `checkins.md` in the memory directory if it exists (written by the `battery` skill). For the timeframe, summarize:
 - Samn-Perelli battery ratings: count, and how many were 5 or higher
 - Whether low ratings line up with observed signals, e.g. "rated 5+ on 4 days; 3 of those had retry loops after 150+ min". If they don't line up, say so: that's useful for tuning, not a failure.
 - Latest weekly burnout answer, and the one before it
+- Latest monthly check (from `monthly_checks` in the analyzer JSON, or by reading `bo1`–`bo4` lines yourself): exhaustion score 0–100 and the previous one, plus any cause area that looks poor (`qd2`/`wf2` at 75+, or `in3`/`sc1`/`re1`/`ju4`/`mw1` at 25 or less)
 
 Never infer a rating that wasn't given.
 
-## 9. Weekly Burnout Item (timeframe ≥ 7 days only)
+## 8b. Does it match how you feel? (timeframe ≥ 30 days)
 
-Ask at most once per 7 days: skip it if `checkins.md` already has a `burnout` line from the last 7 days. Never ask in current-session mode. Ask at the end, after the observations, word for word:
+From `validation` in the analyzer JSON. For each self-report (`burnout`, `exhaustion`):
+- If `rho` is null: "N of 8 paired weeks so far" and nothing more.
+- Otherwise list the recovery metrics with |ρ| ≥ 0.4, worded as "moved together in your data (ρ = −0.6, 10 weeks)". Never say "predicts" or "causes", and mention that with ~10 weeks this is a rough hint, not a finding. If none reach 0.4, say the recovery numbers haven't tracked your self-reports so far: that's useful for tuning, not a failure.
+
+## 9. Monthly Check or Weekly Burnout Item (timeframe ≥ 7 days only)
+
+Never ask either in current-session mode. Ask at most one of them per run, at the end, after the observations:
+
+1. **Monthly check first:** if `checkins.md` has no `bo1` line in the last 28 days, offer it in one line ("Monthly check, 4 quick questions plus 7 optional ones? (or skip)"). If they accept, follow section 5 of the `battery` skill exactly; it records the answers and responds. In that run, don't also ask the weekly item below.
+2. **Otherwise, the weekly item:** ask at most once per 7 days; skip it if `checkins.md` already has a `burnout` line from the last 7 days. Ask at the end, after the observations, word for word:
 
 > **Optional:** Overall, based on your definition of burnout, how would you rate your level of burnout?
 > 1. I enjoy my work. I have no symptoms of burnout.
@@ -294,15 +323,15 @@ Record the answer in `checkins.md` as `burnout · <1–5|skip> · observe`, usin
 
 ## 10. Workload Summary (offered, never automatic)
 
-Offer this when a pattern has persisted for 2+ weeks, or when the burnout rule above says so. It's a short, neutral, factual paragraph the user could bring to a 1:1 or planning meeting if they choose, e.g.:
+Offer this when a pattern has persisted for 2+ weeks, when recovery debt is 2+ weeks, or when the burnout rule above or the monthly check (battery skill, section 5) says so. It's a short, neutral, factual paragraph the user could bring to a 1:1 or planning meeting if they choose, e.g.:
 
-> Late-hour commits on 9 of the last 14 days, mostly in `billing/`. 3 revert clusters. Battery rated 5+ on 6 days.
+> Late-hour commits on 9 of the last 14 days, mostly in `billing/`. 3 revert clusters. Days without Claude sessions: 1 in each of the last 3 weeks (usually 2). Battery rated 5+ on 6 days. In the monthly check, workload ("not enough time for my tasks") was "often" and influence over the amount of work "seldom".
 
 Point at causes (workload, scope, on-call, unclear requirements), never at the person. It stays private unless they share it.
 
 ## 11. Assess and Produce Output
 
-Score signals, apply the corroboration rule, then proceed to Output Rules. Include the check-in summary (step 8) after Observations at any level above weak.
+Score signals, apply the corroboration rule, then proceed to Output Rules. Include the recovery facts (step 7b) and the check-in summary (step 8) after Observations at any level above weak; at weak, mention recovery only if a drift flag is active.
 
 ---
 
@@ -395,12 +424,19 @@ metadata:
 - late-hour commit days: <n>
 - no-commit days: <n>
 
+## Recovery (cross-session only)
+- days without Claude sessions this week: <n> (baseline <n or "none yet">)
+- late days / long days: <n> / <n>
+- drift flags: <list or none>
+- recovery debt: <n> weeks
+
 ## Check-ins
 - battery ratings 5+: <n of m>
 - burnout item: <latest answer or "not asked">
+- monthly exhaustion: <latest score or "not asked">
 ```
 
-Omit Metrics in current-session mode. Omit Check-ins if there are none. Never copy prompt text into a snapshot.
+Omit Metrics and Recovery in current-session mode. Omit Check-ins if there are none. Never copy prompt text into a snapshot.
 
 ## Update MEMORY.md
 

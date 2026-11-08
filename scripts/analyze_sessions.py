@@ -10,6 +10,13 @@ Daily history: --save-daily stores one numbers-only line per finished day in
 old transcripts (cleanupPeriodDays). Reports for longer --days windows fill
 days without raw logs from that file; days in neither show as "no data".
 
+Recovery and check-ins (SPEC-v3.md): the output also has a `recovery` block
+(rest, late and long days per week against a 4-week personal baseline, work
+streak, drift flags, recovery debt), `monthly_checks` parsed from
+checkins.md, and `validation` (Spearman correlation between self-reports
+and the recovery week before, after 8+ paired weeks). Counts only; no
+composite score. --json writes all of it, also with --no-report.
+
 Usage:
   python3 -I scripts/analyze_sessions.py [--days 30] [--out report.html]
         [--projects-dir ~/.claude/projects] [--json data.json]
@@ -432,6 +439,92 @@ def recovery(daily, last_day):
                            "long_day_h": LONG_DAY_H, "long_streak_days": LONG_STREAK_DAYS}}
 
 
+# ---- Monthly check and personal validation (SPEC-v3.md sections 4-5) ---------
+EXHAUSTION_KEYS = ("bo1", "bo2", "bo3", "bo4")
+CAUSE_KEYS = ("qd2", "in3", "re1", "sc1", "ju4", "mw1", "wf2")
+DEMAND_KEYS = ("qd2", "wf2")   # high = worse; the other cause items are resources
+CHECK_BLOCK_MIN = 60           # lines within this many minutes form one check
+MIN_PAIRED_WEEKS = 8
+
+
+def monthly_checks(checkins):
+    """Group monthly-check lines into checks with an exhaustion score (0-100)."""
+    lines = sorted((c for c in checkins
+                    if c["instrument"] in EXHAUSTION_KEYS + CAUSE_KEYS), key=lambda c: c["ts"])
+    blocks = []
+    for c in lines:
+        if blocks and minutes(blocks[-1][-1]["ts"], c["ts"]) <= CHECK_BLOCK_MIN:
+            blocks[-1].append(c)
+        else:
+            blocks.append([c])
+    out = []
+    for b in blocks:
+        bo = [c["value"] for c in b if c["instrument"] in EXHAUSTION_KEYS]
+        out.append({"ts": b[0]["ts"], "answered": len(bo),
+                    "exhaustion": round(sum(bo) / len(bo), 1) if len(bo) >= 3 else None,
+                    "causes": {c["instrument"]: c["value"] for c in b
+                               if c["instrument"] in CAUSE_KEYS}})
+    return out
+
+
+def _ranks(xs):
+    order = sorted(range(len(xs)), key=lambda i: xs[i])
+    r = [0.0] * len(xs)
+    i = 0
+    while i < len(order):
+        j = i
+        while j + 1 < len(order) and xs[order[j + 1]] == xs[order[i]]:
+            j += 1
+        for k in range(i, j + 1):
+            r[order[k]] = (i + j) / 2 + 1
+        i = j + 1
+    return r
+
+
+def spearman(xs, ys):
+    """Spearman rank correlation (Pearson on ranks, ties averaged); None if undefined."""
+    if len(xs) < 2:
+        return None
+    rx, ry = _ranks(xs), _ranks(ys)
+    mx, my = sum(rx) / len(rx), sum(ry) / len(ry)
+    sxy = sum((a - mx) * (b - my) for a, b in zip(rx, ry))
+    sxx = sum((a - mx) ** 2 for a in rx)
+    syy = sum((b - my) ** 2 for b in ry)
+    if not sxx or not syy:
+        return None
+    return round(sxy / (sxx * syy) ** 0.5, 3)
+
+
+def validation(daily, checkins):
+    """Pair each self-report with the recovery week before it (SPEC-v3 R-10).
+
+    Self-reports: weekly burnout item (1-5) and monthly exhaustion score.
+    The paired week is the 7 days ending the day before the report; weeks
+    with fewer than MIN_WEEK_DAYS known days are not paired.
+    """
+    by_date = {d["date"]: d for d in daily}
+    reports = {
+        "burnout": [(c["ts"], c["value"]) for c in checkins if c["instrument"] == "burnout"],
+        "exhaustion": [(m["ts"], m["exhaustion"]) for m in monthly_checks(checkins)
+                       if m["exhaustion"] is not None],
+    }
+    out = {}
+    for name, rs in reports.items():
+        pairs = []
+        for ts, v in rs:
+            w = _week_stats(by_date, ts.date() - timedelta(days=1))
+            if w["known_days"] >= MIN_WEEK_DAYS:
+                pairs.append((w, v))
+        n = len(pairs)
+        rho = None
+        if n >= MIN_PAIRED_WEEKS:
+            ys = [v for _, v in pairs]
+            rho = {m: spearman([w[m] for w, _ in pairs], ys) for m in WEEK_METRICS}
+        out[name] = {"n": n, "rho": rho}
+    out["min_pairs"] = MIN_PAIRED_WEEKS
+    return out
+
+
 def summarize(events, subagent_calls, checkins, days, since, history=None):
     mark_short_followups(events)
     acts = [e for e in events if e["kind"] in ("prompt", "interrupt")]
@@ -627,6 +720,8 @@ def summarize(events, subagent_calls, checkins, days, since, history=None):
         "projects": projects.most_common(),
         "checkins": [{**c, "ts": c["ts"].isoformat()} for c in checkins],
         "recovery": recovery(daily, today - timedelta(days=1)),
+        "monthly_checks": [{**m, "ts": m["ts"].isoformat()} for m in monthly_checks(checkins)],
+        "validation": validation(daily, checkins),
     }
 
 
@@ -658,10 +753,10 @@ def main():
             raw_from = (datetime.fromisoformat(raw_from) + timedelta(days=1)).date().isoformat()
         n = save_history(args.history, data["daily"], raw_from)
         print(f"{args.history}: {n} day(s) saved")
-    if args.no_report:
-        return
     if args.json:
         Path(args.json).write_text(json.dumps(data, indent=1))
+    if args.no_report:
+        return
     here = Path(__file__).parent
     template = (here / "report_template.html").read_text()
     js = (here / "report.js").read_text()

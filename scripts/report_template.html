@@ -141,6 +141,16 @@ footer { margin-top: 48px; color: var(--text-muted); font-size: 12px; }
 
 <h2>6. How you felt</h2>
 <div class="card" id="checkins"></div>
+<div class="grid2">
+  <div class="card" id="monthly"></div>
+  <div class="card" id="validation"></div>
+</div>
+
+<h2>7. Recovery</h2>
+<p class="note">Load does harm when recovery is too short for too long. Counted per rolling week of finished days and compared with your own baseline (median of the 4 weeks before), not with anyone else. "Days without Claude sessions" only means no Claude Code activity: work elsewhere, meetings and on-call are invisible.</p>
+<div class="tiles" id="r-tiles"></div>
+<ul class="findings" id="r-findings"></ul>
+<div class="card"><h3>Weeks without enough recovery</h3><p class="sub">Days without Claude sessions per week (bars) · orange = week with a drift flag · dashed line: your current baseline</p><div class="chart" id="c-recovery"></div><details><summary>Show table</summary><div class="tablewrap" id="t-recovery"></div></details></div>
 
 <footer id="footer"></footer>
 </main>

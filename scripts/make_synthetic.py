@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
-"""Generate 30 days of synthetic Claude Code session logs for demos.
+"""Generate 12 weeks of synthetic Claude Code session logs for demos.
 
 Writes transcripts in the same JSONL shape Claude Code uses, so the real
 analyzer can turn them into a report. Everything is invented: project names
 are generic ("Project A".."Project D") and prompt text is placeholder wording.
 
-The month has a shape worth presenting:
+The weeks have a shape worth presenting:
   first days  normal
-  week 1      low effort (short days, Friday off)
-  week 2      normal
-  week 3      high effort (long stretches, late evenings, Saturday work,
+  weeks 1-2   normal (baseline for the recovery layer)
+  week 3      low effort (short days, Friday off)
+  week 4      normal
+  weeks 5-7   slow drift: weekend work creeps in, evenings get later
+  week 8      high effort (long stretches, late evenings, Saturday work,
               parallel sessions, retry loops, heavy AI review load)
   rest        recovery / normal
 
+Check-ins follow the same shape, including a monthly exhaustion check every
+4 weeks, so the recovery and "does it match how you feel" views have data.
+
 Usage:
-  python3 -I scripts/make_synthetic.py [--out examples/synthetic] [--end 2026-11-06] [--seed 7]
+  python3 -I scripts/make_synthetic.py [--out examples/synthetic] [--end 2026-11-07] [--seed 7]
   python3 -I scripts/analyze_sessions.py --projects-dir examples/synthetic/projects \\
       --history examples/synthetic/no-history.jsonl --out examples/report.html
 """
@@ -170,6 +175,19 @@ def plan_day(day, phase):
         if wd in (2, 3):  # past 22:00 on the worst two days
             day.stretch("Project C", day.at(21, j(55, 59)), j(40, 70), "high")
         return
+    if phase.startswith("drift"):
+        level = int(phase[-1])            # 1..3: worse each week
+        if wd == 6 and level < 3:
+            return                        # Sunday still off, until the last drift week
+        if wd >= 5:
+            day.stretch("Project C", day.at(10, j(0, 40)), j(50, 70) + 25 * level, "normal")
+            return
+        day.stretch("Project C", day.at(9, j(0, 30)), j(90, 120), "normal")
+        day.stretch(rng.choice(PROJECTS[:3]), day.at(11, j(30, 55)), j(60, 90), "normal")
+        day.stretch("Project C", day.at(14, j(0, 25)), j(100, 140), "normal")
+        if rng.random() < 0.3 + 0.2 * level:
+            day.stretch("Project C", day.at(18, j(30, 59)), j(40, 60) + 20 * level, "normal")
+        return
     # normal and recovery weeks
     if wd >= 5:
         if wd == 6 and rng.random() < 0.3:
@@ -183,25 +201,40 @@ def plan_day(day, phase):
         day.stretch(rng.choice(PROJECTS), day.at(16, j(30, 50)), j(30, 55), "normal")
 
 
+PHASES = {0: "normal", 1: "normal", 2: "low", 3: "normal",
+          4: "drift1", 5: "drift2", 6: "drift3", 7: "high"}
+
+
 def phase_for(d, start):
-    week = (d - start).days // 7
-    return {0: "low", 1: "normal", 2: "high"}.get(week, "recovery")
+    return PHASES.get((d - start).days // 7, "recovery")
 
 
 CHECKINS = {  # (days after start, HH:MM, instrument, value, source)
     "normal": [("samn-perelli", 3)], "low": [("samn-perelli", 2)],
     "high": [("samn-perelli", 5), ("tlx-mental", 8), ("tlx-frustration", 7)],
     "recovery": [("samn-perelli", 3)],
+    "drift1": [("samn-perelli", 3)], "drift2": [("samn-perelli", 4)],
+    "drift3": [("samn-perelli", 4), ("tlx-mental", 7)],
+}
+WEEKLY_BURNOUT = {"normal": 2, "low": 1, "drift1": 2, "drift2": 2, "drift3": 3,
+                  "high": 3, "recovery": 2}
+# Monthly check (COPSOQ III item values, 0-100) in weeks 3, 7 and 11
+MONTHLY = {
+    3: {"bo1": 25, "bo2": 25, "bo3": 0, "bo4": 50, "qd2": 50, "in3": 75, "sc1": 75,
+        "re1": 50, "ju4": 75, "mw1": 75, "wf2": 25},
+    7: {"bo1": 75, "bo2": 50, "bo3": 50, "bo4": 75, "qd2": 75, "in3": 25, "sc1": 50,
+        "re1": 25, "ju4": 50, "mw1": 50, "wf2": 75},
+    11: {"bo1": 50, "bo2": 25, "bo3": 25, "bo4": 50, "qd2": 50, "in3": 50, "sc1": 75,
+         "re1": 50, "ju4": 50, "mw1": 75, "wf2": 50},
 }
 
 
 def write_checkins(root, days, start, rng):
     lines = ["# Mindful-work check-ins (synthetic)", "",
              "Format: `YYYY-MM-DD HH:MM · instrument · answer · source`", ""]
-    burnout = {0: 1, 1: 2, 2: 3, 3: 2}
     for d in days:
         ph = phase_for(d, start)
-        if d.weekday() >= 5 and ph != "high":
+        if d.weekday() >= 5 and ph not in ("high", "drift3"):
             continue
         if rng.random() < 0.6:
             for inst, v in CHECKINS[ph]:
@@ -217,7 +250,12 @@ def write_checkins(root, days, start, rng):
                 lines.append(f"{d} {hh} · {inst} · {v} · nudge")
         if d.weekday() == 4:  # weekly, during /observe 7d
             w = (d - start).days // 7
-            lines.append(f"{d} 17:30 · burnout · {burnout.get(w, 2)} · observe")
+            if w in MONTHLY:  # the monthly check replaces the weekly item that week
+                for k, v in MONTHLY[w].items():
+                    hh = "17:30" if k.startswith("bo") else "17:31"
+                    lines.append(f"{d} {hh} · {k} · {v} · observe")
+            else:
+                lines.append(f"{d} 17:30 · burnout · {WEEKLY_BURNOUT[ph]} · observe")
     mem = root / "projects" / "-work-Project-A" / "memory"
     mem.mkdir(parents=True, exist_ok=True)
     (mem / "checkins.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -227,7 +265,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--out", default="examples/synthetic")
     ap.add_argument("--end", default=date.today().isoformat(), help="last day (YYYY-MM-DD)")
-    ap.add_argument("--days", type=int, default=30)
+    ap.add_argument("--days", type=int, default=84)
     ap.add_argument("--seed", type=int, default=7)
     args = ap.parse_args()
     rng = random.Random(args.seed)
@@ -244,7 +282,8 @@ def main():
         day.write(root)
     write_checkins(root, [d for d in days if d >= start], start, rng)
     print(f"{root}: {args.days} days ({first} to {end}); "
-          f"low week {start}, high week {start + timedelta(14)}")
+          f"low week {start + timedelta(14)}, drift from {start + timedelta(28)}, "
+          f"high week {start + timedelta(49)}")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 # Spec v3: from session fatigue to burnout risk
 
-> Status: approved v3 · 2026-11-08 · builds on [SPEC.md](SPEC.md) (v2), which stays valid unless a section here replaces it.
+> Status: implemented v3 (phases 5–8) · 2026-11-08 · builds on [SPEC.md](SPEC.md) (v2), which stays valid unless a section here replaces it.
 > Constraint kept from v2: **no extra apps, daemons or services.** Claude Code instructions, hooks, skills, its memory folder, and the stdlib-only Python analyzer already in `scripts/`.
 
 ## 0. How to read this spec
@@ -195,7 +195,7 @@ Most effective interventions are structural, so the team view matters, but it is
 | `scripts/report_template.html`, `report.js` | New section "7. Recovery"; section 6 shows monthly checks and validation | R-1, R-10 |
 | `.claude/skills/battery/SKILL.md` | `/battery month` asks the monthly check (4.1–4.2) | R-6–R-8 |
 | `.claude/skills/observe/SKILL.md` | Cross-session mode runs the analyzer with `--json` for the recovery block; reports recovery facts; offers the monthly check per R-6; Workload Summary uses recovery and Part B | R-1, R-2, R-6, R-8 |
-| `scripts/make_synthetic.py` | 8+ weeks, monthly checks, a slow drift (shrinking rest days, rising exhaustion) so the validation view has something to show | AC-10, demo |
+| `scripts/make_synthetic.py` | 12 weeks, monthly checks, a slow drift (shrinking rest days, rising exhaustion) so the validation view has something to show | AC-10, demo |
 | `tests/` (new) | stdlib `unittest` for every **[test]** check | all [test] ACs |
 | `instructions/mindful-work.md` | No change. The in-session watch stays acute-only | — |
 
@@ -207,13 +207,18 @@ The in-session nudge must not start talking about weekly recovery: chronic topic
 
 Each phase starts by writing the failing tests for its [test] checks.
 
-| Phase | Scope | Done when |
-|---|---|---|
-| **5** | Recovery layer in the analyzer + tests | AC-1b, AC-3*, AC-4*, AC-5 pass |
-| **6** | Monthly check in `battery`, parser in analyzer, cadence in `observe` | AC-6*, AC-7, AC-8, AC-9 pass |
-| **7** | `observe` reports recovery; report section 7 | AC-1a, AC-2 reviewed; synthetic report shows a recovery-debt streak in the high-effort weeks |
-| **8** | Paired validation + synthetic data extended to 10 weeks | AC-10* pass; demo report shows ρ for each metric |
-| **9 (not scheduled)** | Team layer | Only after D-3 |
+| Phase | Scope | Done when | Status |
+|---|---|---|---|
+| **5** | Recovery layer in the analyzer + tests | AC-1b, AC-3*, AC-4*, AC-5 pass | done 2026-11-08 (`tests/test_recovery.py`) |
+| **6** | Monthly check in `battery`, parser in analyzer, cadence in `observe` | AC-6*, AC-7, AC-8, AC-9 pass | done 2026-11-08 (`tests/test_checkins.py`) |
+| **7** | `observe` reports recovery; report section 7 | AC-1a, AC-2 reviewed; synthetic report shows a recovery-debt streak in the high-effort weeks | done 2026-11-08: three flagged weeks in a row (drift into the high week) |
+| **8** | Paired validation + synthetic data extended to 12 weeks | AC-10* pass; demo report shows ρ for each metric | done 2026-11-08 |
+| **9 (not scheduled)** | Team layer | Only after D-3 | — |
+
+Implementation notes:
+- `/observe` gets the recovery block by running the analyzer with `--days 84 --no-report --json` (8 weeks of debt plus a 4-week baseline behind the oldest).
+- For a user-level install the analyzer lives in `~/.claude/scripts/`, next to the hook in `~/.claude/hooks/`.
+- Synthetic data grew to 12 weeks (not 10) so the weekly burnout item reaches the 8 paired weeks the validation view needs.
 
 ---
 

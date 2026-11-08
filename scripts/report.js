@@ -88,7 +88,7 @@ $("subtitle").textContent = `Last ${D.days} days (since ${shortDate(D.since)})${
 $("footer").textContent = `Thresholds: break ≥ ${TH.break_gap} min · light nudge ${TH.light} min · firm ${TH.firm} min · cool-down ${TH.cooldown} min · working hours ${TH.work_start}:00–${TH.work_end}:00 weekdays. Raw logs last as long as cleanupPeriodDays (30 by default); older days come from the numbers-only daily history (--save-daily). Timeline, friction-by-hour, prompt-length and sensitivity charts use raw logs only.`;
 const tiles = [
   ["Active hours", fmt(T.active_h, 1), `${T.active_days} active days`],
-  ["Days with no activity", T.zero_days, "rough recovery days"],
+  ["Days with no activity", T.zero_days, "see 7. Recovery"],
   ["Outside working hours", fmt(T.late_share * 100) + "%", "of prompts"],
   ["Longest stretch", T.longest_stretch + " min", `median ${T.median_stretch} min`],
   ["Interruptions", T.interrupts, `${fmt(T.tool_errors)} failed tool calls`],
@@ -385,6 +385,96 @@ function lines(id, xs, series, { W = 1040, H = 220, xLabel = (v) => v, unit = ""
   const burn = c.filter((x) => x.instrument === "burnout");
   $("checkins").innerHTML = `<h3>Self-reported check-ins</h3><p class="sub">${bat.length} battery ratings (1 fully alert … 7 completely exhausted) · ${burn.length} burnout answers</p><div class="tablewrap" id="t-checkins"></div>`;
   table("t-checkins", ["When", "Instrument", "Answer"], c.map((x) => [new Date(x.ts).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }), x.instrument, x.value]));
+})();
+
+// ---- 6b. Monthly check ------------------------------------------------------------
+(function () {
+  const M = (D.monthly_checks || []);
+  const box = $("monthly");
+  if (!M.length) {
+    box.innerHTML = '<h3>Monthly check</h3><p class="note">Not taken yet. <code>/battery month</code> (or <code>/observe 7d</code>, which offers it every 28 days) asks four exhaustion questions and seven optional ones about workload, control, support, recognition, fairness, meaning and work–life.</p>';
+    return;
+  }
+  const LABEL = { qd2: "Not enough time for tasks", in3: "Influence over amount of work", sc1: "Support from colleagues", re1: "Recognition", ju4: "Work distributed fairly", mw1: "Work feels meaningful", wf2: "Work drains private life" };
+  const DEMAND = new Set(["qd2", "wf2"]);
+  const last = M[M.length - 1], prev = M.length > 1 ? M[M.length - 2] : null;
+  const when = (iso) => shortDate(iso.slice(0, 10));
+  const sc = (m) => m.exhaustion == null ? "no score (fewer than 3 of 4 answered)" : fmt(m.exhaustion);
+  const causes = Object.entries(last.causes).map(([k, v]) => {
+    const poor = DEMAND.has(k) ? v >= 75 : v <= 25;
+    return `<tr><td>${esc(LABEL[k] || k)}</td><td>${DEMAND.has(k) ? "demand" : "resource"}</td><td${poor ? ' style="color:var(--critical);font-weight:600"' : ""}>${v}</td></tr>`;
+  }).join("");
+  box.innerHTML = `<h3>Monthly check</h3><p class="sub">Exhaustion 0–100 (mean of 4 items, higher = more often exhausted) · latest ${when(last.ts)}</p>
+    <div class="tiles" style="margin-top:0"><div class="tile"><div class="label">Exhaustion</div><div class="value">${esc(sc(last))}</div><div class="sub">${prev ? "previous " + esc(sc(prev)) + " on " + when(prev.ts) : "first check"}</div></div></div>
+    ${causes ? `<div class="tablewrap"><table><thead><tr><th>Cause area (latest)</th><th>Type</th><th>0–100</th></tr></thead><tbody>${causes}</tbody></table></div><p class="note">Demands: high is worse. Resources: low is worse. Red = 75+ demand or 25-or-less resource. Items from COPSOQ III, used verbatim; scores are only comparable with your own earlier answers.</p>` : ""}
+    ${M.length > 1 ? `<details><summary>All monthly checks</summary><div class="tablewrap" id="t-monthly"></div></details>` : ""}`;
+  if (M.length > 1) table("t-monthly", ["Date", "Exhaustion", "Items answered"], M.map((m) => [when(m.ts), m.exhaustion == null ? "–" : fmt(m.exhaustion), m.answered]));
+})();
+
+// ---- 6c. Does it match how you feel? -----------------------------------------------
+(function () {
+  const V = D.validation, box = $("validation");
+  if (!V) { box.remove(); return; }
+  const NAMES = { rest_days: "Days without Claude sessions", late_days: "Late days", long_days: "Long days (8h+)", active_h: "Active hours" };
+  const part = (title, v, unit) => {
+    if (!v.rho) return `<p><b>${title}:</b> ${v.n} of ${V.min_pairs} paired weeks so far.</p>`;
+    const rows = Object.entries(v.rho).map(([k, r]) => `<tr><td>${NAMES[k]}</td><td>${r == null ? "–" : (r > 0 ? "+" : "") + fmt(r, 2)}</td></tr>`).join("");
+    return `<p><b>${title}</b> (${v.n} weeks, ${unit}):</p><div class="tablewrap"><table><thead><tr><th>Recovery number, week before</th><th>ρ</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  };
+  box.innerHTML = `<h3>Does it match how you feel?</h3><p class="sub">Spearman rank correlation between each self-report and the recovery numbers of the week before it. Shown after ${V.min_pairs}+ paired weeks.</p>
+    ${part("Weekly burnout item", V.burnout, "1–5")}${part("Monthly exhaustion", V.exhaustion, "0–100")}
+    <p class="note">"Moved together in your data", not "predicts": with a few months of weeks this is a rough hint for tuning thresholds. |ρ| under ~0.4 means little.</p>`;
+})();
+
+// ---- 7. Recovery --------------------------------------------------------------------
+(function () {
+  const R = D.recovery;
+  if (!R) return;
+  const w = R.week, b = R.baseline, TR = R.thresholds;
+  const base = (k, d) => b[k] == null ? "no baseline yet" : `usually ${fmt(b[k], d)}`;
+  $("r-tiles").innerHTML = [
+    ["Days without Claude sessions", w.rest_days, base("rest_days", 1)],
+    ["Late days", w.late_days, base("late_days", 1)],
+    ["Long days", w.long_days, base("long_days", 1)],
+    ["Active hours", fmt(w.active_h, 1), base("active_h", 1)],
+    ["Work streak", R.work_streak + " d", "days in a row with sessions"],
+    ["Recovery debt", R.debt_weeks + " wk", R.debt_weeks >= 2 ? "flagged weeks in a row: sustained" : "flagged weeks in a row"],
+  ].map(([l, v, sub]) => `<div class="tile"><div class="label">${esc(l)}</div><div class="value">${esc(v)}</div><div class="sub">${esc(sub)}</div></div>`).join("");
+  const SAY = {
+    fewer_rest_days: `Fewer days without Claude sessions than usual (${w.rest_days} vs ${b.rest_days == null ? "–" : fmt(b.rest_days, 1)}).`,
+    more_late_days: `More late days than usual (${w.late_days} vs ${b.late_days == null ? "–" : fmt(b.late_days, 1)}).`,
+    more_long_days: `More long days than usual (${w.long_days} vs ${b.long_days == null ? "–" : fmt(b.long_days, 1)}).`,
+    long_streak: `${R.work_streak} days in a row with sessions.`,
+  };
+  const f = R.flags.map((k) => SAY[k]);
+  if (!f.length) f.push(b.rest_days == null ? `Last 7 finished days: ${w.known_days} with data. Not enough history for a baseline yet (needs ~2 weeks).` : "No drift from your baseline in the last 7 finished days.");
+  if (R.debt_weeks >= 2) f.push(`Drift flags for ${R.debt_weeks} weeks in a row.`);
+  $("r-findings").innerHTML = f.map((x) => `<li>${esc(x)}</li>`).join("");
+
+  const weeks = [...R.weeks].reverse();
+  const W = 1040, H = 220, m = { t: 16, r: 12, b: 34, l: 36 };
+  const s = svg("c-recovery", W, H);
+  const y = yAxis(s, m, W, H, 8);  // 8 so ticks fall on whole days (0, 2, 4, 6, 8)
+  const band = (W - m.l - m.r) / weeks.length, bw = Math.min(40, band - 8);
+  weeks.forEach((wk, i) => {
+    const x = m.l + i * band + (band - bw) / 2;
+    const end = new Date(wk.end + "T12:00"), start = new Date(end - 6 * 864e5);
+    const lbl = `${shortDate(start.toISOString().slice(0, 10))}–${shortDate(wk.end)}`;
+    if (wk.known_days === 0) el("rect", { x, y: y(0) - 3, width: bw, height: 3, rx: 1.5, fill: "none", stroke: "var(--grid)", "stroke-dasharray": "2 2" }, s);
+    else if (wk.rest_days) el("path", { d: barPath(x, y(wk.rest_days), bw, y(0) - y(wk.rest_days)), fill: wk.flags.length ? "var(--series-2)" : "var(--series-1)" }, s);
+    else el("rect", { x, y: y(0) - 3, width: bw, height: 3, rx: 1.5, fill: wk.flags.length ? "var(--series-2)" : "var(--grid)" }, s);
+    if (wk.known_days && wk.rest_days) text(s, x + bw / 2, y(wk.rest_days) - 4, wk.rest_days, { "text-anchor": "middle", class: "lbl" });
+    text(s, x + bw / 2, H - m.b + 16, shortDate(wk.end), { "text-anchor": "middle" });
+    const hit = el("rect", { x: m.l + i * band, y: m.t, width: band, height: H - m.t - m.b, class: "hit" }, s);
+    hover(hit, `<b>${lbl}</b><br>${wk.known_days ? `${wk.rest_days} days without Claude sessions<br>${wk.late_days} late · ${wk.long_days} long · ${fmt(wk.active_h, 1)}h active<br><span class="muted">${wk.known_days} of 7 days with data</span>${wk.flags.length ? "<br>Flags: " + esc(wk.flags.join(", ").replace(/_/g, " ")) : ""}` : "No data"}`);
+  });
+  if (b.rest_days != null) {
+    el("line", { x1: m.l, x2: W - m.r, y1: y(b.rest_days), y2: y(b.rest_days), stroke: "var(--text-secondary)", "stroke-dasharray": "4 4", "stroke-width": 1.5, "pointer-events": "none" }, s);
+    text(s, m.l + 4, y(b.rest_days) - 6, `baseline ${fmt(b.rest_days, 1)}`, { class: "lbl" });
+  }
+  table("t-recovery", ["Week ending", "Days with data", "Without sessions", "Late", "Long", "Active h", "Flags"],
+    weeks.map((wk) => [wk.end, wk.known_days, wk.rest_days, wk.late_days, wk.long_days, fmt(wk.active_h, 1), wk.flags.join(", ").replace(/_/g, " ") || "–"]));
+  $("footer").textContent += ` Recovery: rest day < ${TR.rest_max_h} h active · late day ≥ ${TR.late_day_prompts} late prompts · long day ≥ ${TR.long_day_h} h · streak flag at ${TR.long_streak_days} days.`;
 })();
 
 })();

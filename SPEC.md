@@ -1,6 +1,6 @@
 # Spec: Cognitive Observability v2: Claude that notices when the work is wearing you down
 
-> Status: draft v2 · 2026-11-05
+> Status: draft v2 · 2026-11-05 · extended by [SPEC-v3.md](SPEC-v3.md) (recovery layer, monthly check, personal validation, team design)
 > Constraint: **no extra apps or tools.** Only what Claude Code already provides: instructions (CLAUDE.md or a skill), its built-in hooks, and its memory folder.
 
 ## Goal
@@ -221,7 +221,7 @@ Asked at most once a week, and only during `/observe 7d` (or a longer timeframe)
 - No external apps, background daemons, wearables or OS idle detection.
 - No event logs or new data stores beyond the existing snapshots, the single `checkins.md` file (section 6.4), the hook's two activity timestamps, and the numbers-only `daily.jsonl` summary (no text).
 - No diagnosis or "fatigue score" presented as fact.
-- No team or manager visibility. Personal and local only.
+- No team or manager visibility. Personal and local only. (SPEC-v3.md section 6 designs an opt-in, aggregate-only team layer; not built.)
 - No storing prompt text in snapshots; summaries only.
 
 ---
