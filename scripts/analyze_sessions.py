@@ -344,6 +344,94 @@ def median(xs):
     return xs[len(xs) // 2] if xs else 0
 
 
+# ---- Recovery layer (SPEC-v3.md section 3) ------------------------------------
+REST_MAX_H = 0.5          # a known day under this many active hours is a rest day
+LATE_DAY_PROMPTS = 3      # late prompts that make a late day
+LONG_DAY_H = 8            # active hours that make a long day
+LONG_STREAK_DAYS = 12     # work streak that raises a flag without a baseline
+MIN_WEEK_DAYS = 5         # known days a week needs before it can raise a flag
+MIN_BASELINE_DAYS = 14    # known days the 4 baseline weeks need
+DEBT_WEEKS = 8            # weeks looked back for recovery debt
+WEEK_METRICS = ("rest_days", "late_days", "long_days", "active_h")
+
+
+def _true_median(xs):
+    xs = sorted(xs)
+    n = len(xs)
+    return (xs[n // 2] if n % 2 else (xs[n // 2 - 1] + xs[n // 2]) / 2) if xs else None
+
+
+def _week_stats(by_date, end):
+    """Stats for the 7 days ending on `end` (a date). Unknown days are skipped."""
+    known = [by_date[d] for d in ((end - timedelta(days=i)).isoformat() for i in range(7))
+             if d in by_date and not by_date[d].get("no_data")]
+    return {"end": end.isoformat(), "known_days": len(known),
+            "rest_days": sum(1 for d in known if d["active_h"] < REST_MAX_H),
+            "late_days": sum(1 for d in known if d.get("late_prompts", 0) >= LATE_DAY_PROMPTS),
+            "long_days": sum(1 for d in known if d["active_h"] >= LONG_DAY_H),
+            "active_h": round(sum(d["active_h"] for d in known), 1)}
+
+
+def _work_streak(by_date, end):
+    n, d = 0, end
+    while True:
+        rec = by_date.get(d.isoformat())
+        if not rec or rec.get("no_data") or rec["active_h"] < REST_MAX_H:
+            return n
+        n += 1
+        d -= timedelta(days=1)
+
+
+def _week_flags(by_date, end):
+    week = _week_stats(by_date, end)
+    base_weeks = [_week_stats(by_date, end - timedelta(days=7 * k)) for k in range(1, 5)]
+    if sum(w["known_days"] for w in base_weeks) >= MIN_BASELINE_DAYS:
+        baseline = {m: _true_median([w[m] for w in base_weeks]) for m in WEEK_METRICS}
+    else:
+        baseline = {m: None for m in WEEK_METRICS}
+    streak = _work_streak(by_date, end)
+    flags = []
+    if week["known_days"] >= MIN_WEEK_DAYS and baseline["rest_days"] is not None:
+        if week["rest_days"] <= 1 and week["rest_days"] <= baseline["rest_days"] - 1:
+            flags.append("fewer_rest_days")
+        if week["late_days"] >= baseline["late_days"] + 2:
+            flags.append("more_late_days")
+        if week["long_days"] >= baseline["long_days"] + 2:
+            flags.append("more_long_days")
+    if streak >= LONG_STREAK_DAYS:
+        flags.append("long_streak")
+    return week, baseline, streak, flags
+
+
+def recovery_debt(flag_lists):
+    """Consecutive flagged weeks, latest first, capped at DEBT_WEEKS."""
+    n = 0
+    for f in flag_lists[:DEBT_WEEKS]:
+        if not f:
+            break
+        n += 1
+    return n
+
+
+def recovery(daily, last_day):
+    """Recovery layer for the week ending on `last_day` (the last finished day).
+
+    `daily` is a list of {"date", "no_data", "active_h", "late_prompts"}; days
+    after `last_day` are ignored, missing days are unknown. Counts only: no
+    composite score.
+    """
+    by_date = {d["date"]: d for d in daily if d["date"] <= last_day.isoformat()}
+    week, baseline, streak, flags = _week_flags(by_date, last_day)
+    weeks = []
+    for k in range(DEBT_WEEKS):
+        w, _, _, f = _week_flags(by_date, last_day - timedelta(days=7 * k))
+        weeks.append({**w, "flags": f})
+    return {"week": week, "baseline": baseline, "work_streak": streak, "flags": flags,
+            "debt_weeks": recovery_debt([w["flags"] for w in weeks]), "weeks": weeks,
+            "thresholds": {"rest_max_h": REST_MAX_H, "late_day_prompts": LATE_DAY_PROMPTS,
+                           "long_day_h": LONG_DAY_H, "long_streak_days": LONG_STREAK_DAYS}}
+
+
 def summarize(events, subagent_calls, checkins, days, since, history=None):
     mark_short_followups(events)
     acts = [e for e in events if e["kind"] in ("prompt", "interrupt")]
@@ -538,6 +626,7 @@ def summarize(events, subagent_calls, checkins, days, since, history=None):
         "parallel_dist": sorted(parallel_dist.items()),
         "projects": projects.most_common(),
         "checkins": [{**c, "ts": c["ts"].isoformat()} for c in checkins],
+        "recovery": recovery(daily, today - timedelta(days=1)),
     }
 
 
