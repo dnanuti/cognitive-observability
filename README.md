@@ -99,14 +99,63 @@ The raw synthetic transcripts are in `examples/synthetic/projects/`, in the same
 
 ## Commands
 
+### Check-ins (`/battery`)
+
 | Command | What happens |
 |---|---|
-| `/battery` or `/battery 4` | Log how you feel (1 fully alert … 7 completely exhausted); Claude adjusts |
-| `/observe` | Reflect on the current session |
-| `/battery month` | Monthly check: 4 exhaustion questions, 7 optional ones about what's around the work |
-| `/observe 7d` | Weekly view: git patterns, recovery against your baseline, your check-ins, optional burnout question or monthly check |
-| `/observe 30d` | Also shows which recovery numbers have moved together with your check-ins (after ~8 weeks) |
-| "not now" / "stop the reminders" | Quiet for this stretch / this session |
+| `/battery` | Asks how you feel right now on the Samn-Perelli scale (1 fully alert … 7 completely exhausted) and adjusts: 1–4 carry on, 5 suggests a break, 6–7 suggests stopping and writes a "where we are" note |
+| `/battery 4` | Same, with the rating given up front |
+| A number 1–7 in reply to a nudge's "battery check" | Recorded the same way, with source `nudge` |
+| After a rating of 5+ | Optionally asks two NASA-TLX items (mental demand, frustration, 0–10) to tell what kind of help fits |
+| `/battery month` | Monthly check: 4 exhaustion questions (last 4 weeks) and 7 optional ones on workload, control, support, recognition, fairness, meaning and work–life. At most once per 28 days |
+| "skip" | Recorded as a skip, never treated as a low score |
+
+Every answer is one line in `checkins.md` in Claude's memory folder for the project.
+
+### Reflection (`/observe`)
+
+| Command | What you get |
+|---|---|
+| `/observe` | The current session: retry loops, yak shaving, frustration, stretch length, context switching. No git, no check-in questions |
+| `/observe 24h`, `/observe Nh` | Git history for that window (commit times, churn, reverts, scope scatter, unmerged branches), compared with your earlier snapshots |
+| `/observe 7d`, `/observe 1w`, `/observe Nd` (N ≥ 7) | The above, plus **recovery** against your own 4-week baseline (days without Claude sessions, late and long days, work streak, recovery debt), your check-ins, and at the end either the weekly burnout question or, every 28 days, the monthly check |
+| `/observe 30d` (or longer) | The above, plus **does it match how you feel**: which recovery numbers moved together with your self-reports (shown after ~8 paired weeks) |
+
+Output length follows the evidence: a sentence when things look normal, observations plus a concrete next step (split the task, change approach, note where you are) when they don't. Each run saves a short snapshot (no prompt text) so later runs can tell a bad day from a pattern. Outside a git repo, a timeframe run stops and suggests plain `/observe` instead.
+
+### In-session watcher (always on)
+
+Nothing to run: `instructions/mindful-work.md` and the timing hook do this. You can steer it in plain words:
+
+| Say | Effect |
+|---|---|
+| "not now" / "later" | No nudges for the rest of this stretch (until a 10+ min break) |
+| "stop the reminders" | No nudges for the rest of this session |
+| "yes" to "I can note where we are first" | Claude writes a short note: what we tried, current state, first step on return |
+| `mindful-work: off` in a repo's `CLAUDE.md` | Watcher off in that repo; `/battery` still works |
+
+### Scripts
+
+| Command | What it does |
+|---|---|
+| `python3 -I scripts/analyze_sessions.py --days 30 --out session-report.html` | HTML report from local session history |
+| `… --days 180` | Longer view; days without raw logs come from the daily history |
+| `… --save-daily --no-report` | Store finished days in `~/.claude/mindful-work/daily.jsonl` (the hook does this once a day) |
+| `… --json data.json` | Also write the numbers as JSON (works with `--no-report`) |
+| `… --projects-dir DIR`, `… --history FILE` | Read other logs or another history file (used for the demo) |
+| `python3 -I scripts/make_synthetic.py --end YYYY-MM-DD [--days 84] [--seed 7]` | Regenerate the synthetic demo data |
+| `python3 -m unittest discover -s tests` | Run the tests |
+
+### Settings (environment variables)
+
+| Variable | Default | Effect |
+|---|---|---|
+| `MINDFUL_BREAK_MIN` | `10` | Minutes of no activity from you or Claude that count as a break |
+| `MINDFUL_DAILY` | `1` | `0` turns off the once-a-day history save |
+| `MINDFUL_STATE_DIR` | `~/.claude/mindful-work` | Where the hook and history keep their files |
+| `MINDFUL_NOW` | system clock | Fake the time (epoch seconds), for testing the hook |
+
+Working hours and nudge thresholds live in `instructions/mindful-work.md` (mirrored at the top of `scripts/analyze_sessions.py`).
 
 ## Privacy
 
@@ -114,12 +163,8 @@ Everything stays local. Check-ins and snapshots are stored in Claude's per-proje
 
 ## Limits
 
-It only sees the current Claude session: not parallel sessions, not work outside Claude, not breaks away from the keyboard. Detection is Claude's judgment, not a measurement, and nothing here diagnoses burnout. "Days without Claude sessions" isn't the same as days off. The monthly check covers exhaustion and its causes, but not cynicism (only a proxy, "is your work meaningful?") or efficacy.
+Stretch time and the analyzer count every Claude Code session on this machine, but Claude's in-the-moment judgement (retry loops, frustration) only sees the current one. Nothing sees work outside Claude, and a break means no Claude activity, not that you stepped away. Detection is Claude's judgment, not a measurement, and nothing here diagnoses burnout. "Days without Claude sessions" isn't the same as days off. The monthly check covers exhaustion and its causes, but not cynicism (only a proxy, "is your work meaningful?") or efficacy.
 
 ## Tests
 
-```bash
-python3 -m unittest discover -s tests
-```
-
-Standard library only. The tests cover the recovery layer, the monthly-check parser, the validation statistics, and that the questionnaire wording in the `battery` skill matches SPEC-v3.md exactly.
+Standard library only (`python3 -m unittest discover -s tests`). The tests cover the recovery layer, the monthly-check parser, the validation statistics, and that the questionnaire wording in the `battery` skill matches SPEC-v3.md exactly.
